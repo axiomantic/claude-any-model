@@ -7,12 +7,11 @@ MODELS_LAST_REVISITED="2026-08-21"
 
 
 # Configuration paths
-APP_DIR="${HOME}/.claude-to-openrouter-proxy"
-LEGACY_APP_DIR="${HOME}/.litellm-proxy"
-PLIST_LABEL="com.claude-to-openrouter-proxy"
-LEGACY_PLIST_LABEL="com.litellm.proxy"
+APP_DIR="${HOME}/.claude-openrouter-models"
+LEGACY_APP_DIRS=("${HOME}/.claude-to-openrouter-proxy" "${HOME}/.litellm-proxy")
+PLIST_LABEL="com.claude-openrouter-models"
+LEGACY_PLIST_LABELS=("com.claude-to-openrouter-proxy" "com.litellm.proxy")
 PLIST_PATH="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
-LEGACY_PLIST_PATH="${HOME}/Library/LaunchAgents/${LEGACY_PLIST_LABEL}.plist"
 PORT=3010
 
 # Detect Script Directory
@@ -74,30 +73,38 @@ prompt_read() {
     printf -v "$out_var" "%s" "${user_input:-$default_val}"
 }
 
-# Migrate legacy .litellm-proxy directory and launchd service if present
+# Migrate legacy directories and launchd services if present
 migrate_legacy_dir() {
-    if [[ -d "${LEGACY_APP_DIR}" && ! -L "${LEGACY_APP_DIR}" ]]; then
-        info "Migrating legacy proxy directory from ${LEGACY_APP_DIR} to ${APP_DIR}..."
-        if [[ ! -d "${APP_DIR}" ]]; then
-            mv "${LEGACY_APP_DIR}" "${APP_DIR}"
-            ln -s "${APP_DIR}" "${LEGACY_APP_DIR}"
-            success "Moved ${LEGACY_APP_DIR} -> ${APP_DIR} and created compatibility symlink."
-        else
-            cp -rn "${LEGACY_APP_DIR}/"* "${APP_DIR}/" 2>/dev/null || true
-            rm -rf "${LEGACY_APP_DIR}"
-            ln -s "${APP_DIR}" "${LEGACY_APP_DIR}"
-            success "Merged legacy directory into ${APP_DIR} and created symlink."
+    shopt -s dotglob nullglob
+    for legacy_dir in "${LEGACY_APP_DIRS[@]}"; do
+        if [[ -d "${legacy_dir}" && ! -L "${legacy_dir}" ]]; then
+            info "Migrating legacy proxy directory from ${legacy_dir} to ${APP_DIR}..."
+            if [[ ! -d "${APP_DIR}" ]]; then
+                mv "${legacy_dir}" "${APP_DIR}"
+                ln -s "${APP_DIR}" "${legacy_dir}"
+                success "Moved ${legacy_dir} -> ${APP_DIR} and created compatibility symlink."
+            else
+                cp -rn "${legacy_dir}/"* "${APP_DIR}/" 2>/dev/null || true
+                rm -rf "${legacy_dir}"
+                ln -s "${APP_DIR}" "${legacy_dir}"
+                success "Merged ${legacy_dir} into ${APP_DIR} and created compatibility symlink."
+            fi
+        elif [[ ! -e "${legacy_dir}" && -d "${APP_DIR}" ]]; then
+            ln -s "${APP_DIR}" "${legacy_dir}"
         fi
-    elif [[ ! -e "${LEGACY_APP_DIR}" && -d "${APP_DIR}" ]]; then
-        ln -s "${APP_DIR}" "${LEGACY_APP_DIR}"
-    fi
+    done
+    shopt -u dotglob nullglob
 
-    # Unload legacy launchd service if registered
-    if [[ -f "${LEGACY_PLIST_PATH}" ]]; then
-        info "Unloading legacy launchd daemon (${LEGACY_PLIST_LABEL})..."
-        launchctl unload "${LEGACY_PLIST_PATH}" 2>/dev/null || true
-        rm -f "${LEGACY_PLIST_PATH}"
-    fi
+
+    # Unload and remove legacy launchd plists
+    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+        local legacy_plist="${HOME}/Library/LaunchAgents/${legacy_label}.plist"
+        if [[ -f "${legacy_plist}" ]]; then
+            info "Unloading legacy launchd daemon (${legacy_label})..."
+            launchctl unload "${legacy_plist}" 2>/dev/null || true
+            rm -f "${legacy_plist}"
+        fi
+    done
 }
 
 ensure_dirs() {
@@ -107,6 +114,7 @@ ensure_dirs() {
     mkdir -p "${CLAUDE_3P_DIR}"
     migrate_legacy_dir
 }
+
 
 # Check if Claude Desktop is running and block until user closes it
 check_claude_closed() {
@@ -312,9 +320,10 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
     }
 
 def main():
-    app_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.claude-to-openrouter-proxy")
+    app_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.claude-openrouter-models")
     claude_3p_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/Library/Application Support/Claude-3p/configLibrary")
     port = sys.argv[3] if len(sys.argv) > 3 else "3010"
+
 
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config(app_dir)
@@ -619,16 +628,19 @@ uninstall_service() {
         rm -f "${PLIST_PATH}"
         success "Removed launchd plist: ${PLIST_PATH}"
     fi
-    if [[ -f "${LEGACY_PLIST_PATH}" ]]; then
-        launchctl unload "${LEGACY_PLIST_PATH}" 2>/dev/null || true
-        rm -f "${LEGACY_PLIST_PATH}"
-    fi
+    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+        local legacy_plist="${HOME}/Library/LaunchAgents/${legacy_label}.plist"
+        if [[ -f "${legacy_plist}" ]]; then
+            launchctl unload "${legacy_plist}" 2>/dev/null || true
+            rm -f "${legacy_plist}"
+        fi
+    done
 
     local clean_all=""
     prompt_read "Do you also want to remove all configuration, logs, and venv in ${APP_DIR}? (y/N): " clean_all "n"
     if [[ "$clean_all" =~ ^[Yy]$ ]]; then
-        rm -rf "${APP_DIR}" "${LEGACY_APP_DIR}"
-        success "Removed ${APP_DIR}"
+        rm -rf "${APP_DIR}" "${LEGACY_APP_DIRS[@]}"
+        success "Removed ${APP_DIR} and legacy links"
     fi
     success "Uninstall complete."
 }
@@ -638,12 +650,19 @@ status_service() {
     info "Curated model recommendations last revisited: ${MODELS_LAST_REVISITED}"
     if launchctl list | grep -q "${PLIST_LABEL}"; then
         success "Daemon ${PLIST_LABEL} (v${VERSION}) is RUNNING."
-    elif launchctl list | grep -q "${LEGACY_PLIST_LABEL}"; then
-        warn "Legacy daemon ${LEGACY_PLIST_LABEL} is running. Run './setup.sh restart' to migrate."
     else
-        warn "Daemon ${PLIST_LABEL} is NOT running."
+        local found_legacy=false
+        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+            if launchctl list | grep -q "${legacy_label}"; then
+                warn "Legacy daemon ${legacy_label} is running. Run './setup.sh restart' to migrate."
+                found_legacy=true
+                break
+            fi
+        done
+        if [ "$found_legacy" = false ]; then
+            warn "Daemon ${PLIST_LABEL} is NOT running."
+        fi
     fi
-
 
     echo ""
     info "Testing endpoint connectivity on port ${PORT}..."
@@ -689,7 +708,7 @@ post_setup_prompt() {
 }
 
 usage() {
-    echo "Claude to OpenRouter Proxy Setup v${VERSION}"
+    echo "Claude OpenRouter Models Setup v${VERSION}"
     echo "Usage: $0 {install|models|status|restart|stop|start|uninstall|version}"
     echo ""
     echo "Commands:"
@@ -719,9 +738,23 @@ case "${1:-install}" in
     models)
         ensure_dirs
         run_model_configuration
-        if launchctl list | grep -q "${PLIST_LABEL}" || launchctl list | grep -q "${LEGACY_PLIST_LABEL}"; then
+        local restart_needed=false
+        if launchctl list | grep -q "${PLIST_LABEL}"; then
+            restart_needed=true
+        else
+            for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+                if launchctl list | grep -q "${legacy_label}"; then
+                    restart_needed=true
+                    break
+                fi
+            done
+        fi
+        if [ "$restart_needed" = true ]; then
             info "Restarting proxy to apply new YAML configuration..."
-            launchctl unload "${LEGACY_PLIST_PATH}" 2>/dev/null || true
+            for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+                launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
+                rm -f "${HOME}/Library/LaunchAgents/${legacy_label}.plist"
+            done
             launchctl unload "${PLIST_PATH}" 2>/dev/null || true
             install_service
             success "Proxy restarted with updated configuration."
@@ -741,7 +774,9 @@ case "${1:-install}" in
         ;;
     stop)
         launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-        launchctl unload "${LEGACY_PLIST_PATH}" 2>/dev/null || true
+        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+            launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
+        done
         success "Stopped proxy daemon"
         ;;
     restart)
@@ -751,7 +786,7 @@ case "${1:-install}" in
         status_service
         ;;
     version|--version|-v)
-        echo "Claude to OpenRouter Proxy v${VERSION}"
+        echo "Claude OpenRouter Models v${VERSION}"
         ;;
     *)
         usage

@@ -78,5 +78,6 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 * **⚡ Real-Time API Pricing:** Queries `https://openrouter.ai/api/v1/models` dynamically for up-to-date pricing and context window sizes.
 * **🏷️ In-App Pricing Labels:** Displays prices in Claude's model picker (e.g. `Kimi K3 ($3.00/$15.00) [1M]`).
-* **🔄 Background Daemon:** Managed via macOS launchd (`com.claude-to-openrouter-proxy`).
+* **🔄 Background Daemon:** Managed via macOS launchd (`com.claude-openrouter-models`).
+
 * **🤖 Weekly Catalog Scans:** A weekly GitHub Action monitors OpenRouter releases, evaluates price shifts, and proposes updated recommendations via PRs.
