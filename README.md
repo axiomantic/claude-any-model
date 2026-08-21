@@ -1,10 +1,31 @@
 # Claude OpenRouter Models (`claude-openrouter-models`)
 
-Route **Claude Desktop Third-Party Inference** requests to cost-effective models on **OpenRouter** (e.g. Kimi K3, Qwen3-Coder, DeepSeek V4 Flash, GLM-5.2) with live token pricing shown directly in Claude's model picker.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
+[![OpenRouter](https://img.shields.io/badge/OpenRouter-API-purple.svg)](https://openrouter.ai)
+[![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
+
+Route Claude Desktop Third-Party Inference requests to models on OpenRouter (such as Kimi K3, Qwen3-Coder, DeepSeek V4 Flash, GLM-5.2) with live token pricing shown directly in Claude's model picker.
 
 ---
 
-## ⚡ Quick Start (One-Liner)
+## Overview
+
+Anthropic Claude Desktop includes a "Third-Party Inference" mode that allows routing requests to an external API gateway instead of Anthropic servers.
+
+`claude-openrouter-models` sets up a lightweight local LiteLLM gateway proxy and automatically configures Claude Desktop so you can use frontier and cost-effective models from OpenRouter inside Claude Desktop with real-time pricing and full context windows.
+
+### How It Works
+
+1. **Claude Desktop (3P Gateway Mode)** sends messages to the local gateway at `http://127.0.0.1:3010`.
+2. **Local Proxy (LiteLLM)** translates Anthropic Messages API formats and routes them to your chosen models on OpenRouter.
+3. **Automated Pricing & Catalog Sync**: Queries OpenRouter's live API to populate accurate per-token pricing labels directly inside Claude Desktop's model picker.
+
+---
+
+## Quick Start
+
+Run the installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models/main/setup.sh | bash
@@ -14,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models
 
 ---
 
-## 🧭 Curated Model Tiers
+## Curated Model Tiers
 
 | Tier | Claude Alias | Recommended Target | Price (In / Out per 1M) | Context | Strength |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -26,15 +47,15 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models
 
 ---
 
-## ⚙️ How Gateway Mode Works in Claude Desktop
-
-Claude Desktop supports local gateway proxies via its sandboxed third-party inference system (see [Anthropic Third-Party Inference Guide](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/third-party-llms)):
+## Gateway Mode Setup in Claude Desktop
 
 ### Automated Configuration (Recommended)
-Running `./setup.sh install` or `./setup.sh models` automatically configures both the LiteLLM proxy and Claude Desktop's active profile in `~/Library/Application Support/Claude-3p/configLibrary/`.
+
+Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon and Claude Desktop's active profile in `~/Library/Application Support/Claude-3p/configLibrary/`.
 
 ### Manual GUI Verification
-If configuring or verifying via the Claude Desktop in-app menu (**Developer > Configure Third-Party Inference**):
+
+If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inference**):
 * **Inference Provider:** `Gateway`
 * **Inference Gateway Base URL:** `http://127.0.0.1:3010`
 * **Inference Gateway API Key:** `dummy-key`
@@ -44,17 +65,18 @@ If configuring or verifying via the Claude Desktop in-app menu (**Developer > Co
 
 ---
 
-## 📦 Migrating Existing Sessions to Gateway Mode
+## Migrating Existing Sessions to Gateway Mode
 
-When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects won't appear by default.
+When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default.
 
 ### 1. Enable the Import Feature in Your 3P Profile
-By default, Gateway mode disables the migration UI and shows:
+
+By default, Gateway mode disables the migration UI with the message:
 > *"Import isn’t enabled for this deployment. Contact your organization’s administrator to turn it on."*
 
 To unlock it:
-* **Automatic:** Run `./setup.sh install` or `./setup.sh models` (which automatically injects `"claudeAiImport": { "enabled": true }` into your active profile).
-* **Manual:** If you configured 3P mode by hand, add the `claudeAiImport` block to your active profile in `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`:
+* **Automatic:** Running `./setup.sh install` or `./setup.sh models` automatically enables this setting in your active profile.
+* **Manual:** Add the `claudeAiImport` block to your active profile in `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`:
   ```json
   "claudeAiImport": {
     "enabled": true,
@@ -64,10 +86,11 @@ To unlock it:
   ```
 
 ### 2. Import Your Sessions
+
 1. Restart Claude Desktop in Gateway mode.
-2. Open **Settings** (`Cmd + ,` on macOS) → **Import**.
+2. Open **Settings** (`Cmd + ,` on macOS) -> **Import**.
 3. Select your local sources:
-   * **Claude app data** (imports previous 1P Desktop chat/code sessions)
+   * **Claude app data** (imports previous 1P Desktop chat and code sessions)
    * **Terminal (CLI)** (imports CLI sessions from `~/.claude/projects/`)
 4. Click **Import**.
 
@@ -75,7 +98,7 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 ---
 
-## 🛠️ CLI Commands
+## CLI Commands
 
 ```bash
 ./setup.sh models     # Switch or reconfigure tier models (fetches live OpenRouter prices)
@@ -86,11 +109,12 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 ---
 
-## 🤖 Automated Weekly Recommender (GitHub Actions)
+## Automated Model Recommendations (GitHub Actions)
 
-A weekly GitHub Action evaluates the live OpenRouter catalog using an LLM with online web search grounding to identify new model releases, benchmark shifts (SWE-bench, LiveBench, Chatbot Arena), and pricing changes, automatically proposing PRs with updated tier recommendations.
+A weekly GitHub Action evaluates the live OpenRouter catalog using benchmark data (SWE-bench, LiveBench, Chatbot Arena) and pricing shifts to automatically open PRs with updated model recommendations.
 
 ### Configuring the Repository Secret
+
 To enable the weekly evaluation workflow in GitHub Actions, add your OpenRouter API key as a repository secret:
 
 ```bash
@@ -99,3 +123,8 @@ gh secret set OPENROUTER_API_KEY --repo axiomantic/claude-openrouter-models
 
 *(Or configure it via the GitHub UI: **Settings > Secrets and variables > Actions > New repository secret**)*
 
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
