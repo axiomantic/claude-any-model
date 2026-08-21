@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Environment and credentials
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Backups and temporary files
+*.bak.*
+*.bak
+.DS_Store
