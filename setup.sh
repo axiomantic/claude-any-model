@@ -259,9 +259,17 @@ def mask_key(key):
         return "****"
     return f"{key[:8]}...{key[-4:]}"
 
-def setup_env():
+def setup_env(force=False):
     env_path = os.path.join(APP_DIR, ".env")
     existing_key = find_existing_api_key()
+
+    if existing_key and not force:
+        # Key already exists and not forcing confirmation prompt
+        if not os.path.exists(env_path):
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(f"OPENROUTER_API_KEY={existing_key}\nPORT={PORT}\n")
+            os.chmod(env_path, 0o600)
+        return
 
     if existing_key:
         info(f"Existing OpenRouter API key found: {mask_key(existing_key)}")
@@ -274,6 +282,7 @@ def setup_env():
                 os.chmod(env_path, 0o600)
                 success(f"Preserved API key to {env_path}")
             return
+
         
         # User explicitly wants to change key
         print("\nEntering new OpenRouter API key (press Enter to cancel and keep current key):", file=sys.stderr)
@@ -957,7 +966,7 @@ def main():
         switch_claude_mode(target)
     elif cmd == "install":
         migrate_legacy_dirs()
-        setup_env()
+        setup_env(force=True)
         run_model_configuration()
         create_runner_script()
         install_service()
