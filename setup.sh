@@ -3,6 +3,8 @@ set -euo pipefail
 
 # Script and Service Version
 VERSION="1.2.0"
+MODELS_LAST_REVISITED="2026-08-21"
+
 
 # Configuration paths
 APP_DIR="${HOME}/.claude-to-openrouter-proxy"
@@ -624,6 +626,7 @@ uninstall_service() {
 
 status_service() {
     header "Proxy & Claude 3P Status"
+    info "Curated model recommendations last revisited: ${MODELS_LAST_REVISITED}"
     if launchctl list | grep -q "${PLIST_LABEL}"; then
         success "Daemon ${PLIST_LABEL} (v${VERSION}) is RUNNING."
     elif launchctl list | grep -q "${LEGACY_PLIST_LABEL}"; then
@@ -631,6 +634,7 @@ status_service() {
     else
         warn "Daemon ${PLIST_LABEL} is NOT running."
     fi
+
 
     echo ""
     info "Testing endpoint connectivity on port ${PORT}..."

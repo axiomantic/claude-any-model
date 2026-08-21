@@ -11,8 +11,12 @@ import uuid
 import urllib.request
 from datetime import datetime
 
+# Date when curated tier recommendations were last reviewed/updated
+MODELS_LAST_REVISITED = "2026-08-21"
+
 # Helper formatting
 def info(msg): print(f"\033[1;34m[INFO]\033[0m {msg}", file=sys.stderr)
+
 def success(msg): print(f"\033[1;32m[SUCCESS]\033[0m {msg}", file=sys.stderr)
 def warn(msg): print(f"\033[1;33m[WARN]\033[0m {msg}", file=sys.stderr)
 def header(msg):
@@ -171,9 +175,11 @@ def main():
         }
     ]
 
-    header("Configure Inference Models for Claude Desktop")
+    header(f"Configure Inference Models for Claude Desktop (Curated: {MODELS_LAST_REVISITED})")
+    print(f"\033[1;34m[INFO]\033[0m Curated model list last revisited: \033[1;36m{MODELS_LAST_REVISITED}\033[0m", file=sys.stderr)
     print("Select your target model for each Anthropic family tier.", file=sys.stderr)
     print("Pricing displayed as ($In / $Out per 1M tokens) fetched from OpenRouter.\n", file=sys.stderr)
+
 
     selections = []
 

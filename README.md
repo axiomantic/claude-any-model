@@ -23,12 +23,15 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models
 ## 🌟 Key Features
 
 * **⚡ Live OpenRouter API Pricing:** Automatically queries `https://openrouter.ai/api/v1/models` in real time to retrieve exact token pricing (`$In / $Out per 1M tokens`) and context window limits for every model option.
+* **📅 Curated Timestamp Tracking:** Displays when the curated tier recommendations list was last reviewed and updated.
+* **🤖 Automated Weekly GitHub Action:** Runs weekly via GitHub Actions to scan all 400+ models on OpenRouter, detect new releases/price drops, and automatically propose PRs and issue reports with updated tier recommendations.
 * **🎯 5 Anthropic Family Tiers:** Curated model options for **Opus**, **Sonnet**, **Haiku**, **Fable**, and **Mythos**.
 * **✍️ Custom Model Write-In:** Enter any arbitrary OpenRouter model ID slug (e.g., `moonshotai/kimi-k3`, `openai/gpt-5.6-terra`) with automatic API price detection.
 * **🏷️ Model Labels with Live Pricing:** Automatically updates Claude Desktop's model picker with pricing visible directly in the model name (e.g., `Kimi K3 ($3.00/$15.00) [1M]`).
 * **🛡️ Sandboxed Claude 3P Synchronization:** Directly updates Claude Desktop's hidden `configLibrary` active profile and checks if Claude Desktop is closed before applying edits to prevent file corruption.
 * **🔄 Seamless Background Daemon:** Installs and manages a background macOS LaunchAgent service (`com.claude-to-openrouter-proxy`).
 * **📂 Automated Backups & Clean Migration:** Preserves timestamped backups of `config.yaml` and `<UUID>.json` before modifications, and seamlessly migrates legacy `.litellm-proxy` directories.
+
 
 ---
 

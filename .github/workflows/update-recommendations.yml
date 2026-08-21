@@ -1,0 +1,68 @@
+name: Weekly Model Recommendations Update
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_pr:
+        description: 'Force creating a PR even if no price/model shifts'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  update-model-recommendations:
+    name: Scan OpenRouter Catalog & Propose Updates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Model Catalog Evaluator
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python3 scripts/update_recommendations.py --apply
+
+      - name: Create Pull Request with Model Updates
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(models): weekly openrouter recommendations update"
+          branch: automated/model-catalog-update
+          delete-branch: true
+          title: "🤖 Weekly OpenRouter Model Recommendations Update"
+          body-path: MODEL_RECOMMENDATIONS_REPORT.md
+          labels: |
+            automated-pr
+            models
+            dependencies
+
+      - name: Post Issue Summary (if scheduled run)
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('MODEL_RECOMMENDATIONS_REPORT.md', 'utf8');
+            const today = new Date().toISOString().split('T')[0];
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📋 Weekly OpenRouter Catalog Scan Report (${today})`,
+              body: report,
+              labels: ['model-catalog-scan', 'automated']
+            });
