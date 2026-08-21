@@ -909,11 +909,42 @@ strict_guardrail = StrictModelGuardrail()
         "inferenceModels": inference_models,
         "inferenceProvider": "gateway",
         "inferenceCredentialKind": "static",
-        # Enable embedded Claude Code agent and all built-in tools in Gateway mode.
-        # Without these, the client defaults to sandboxed/restricted mode.
-        "codeEnabled": True,
-        "agentEnabled": True,
+        # Features & surfaces enabled
+        "isClaudeCodeForDesktopEnabled": True,
+        "coworkTabEnabled": True,
+        "chatTabEnabled": True,
+        "chatAdvancedFileAnalysisEnabled": True,
+        "isDesktopExtensionEnabled": True,
+        "isLocalDevMcpEnabled": True,
+        "mcpPersistentAlwaysAllowEnabled": True,
+        "autoModeEnabled": True,
+        "skillCreationEnabled": True,
+        "disableBundledSkills": False,
         "disabledBuiltinTools": [],
+        "builtinToolPolicy": {
+            "Bash": "allow",
+            "Read": "allow",
+            "Write": "allow",
+            "Edit": "allow",
+            "Glob": "allow",
+            "Grep": "allow",
+            "NotebookEdit": "allow",
+            "WebFetch": "allow",
+            "WebSearch": "allow",
+            "Task": "allow",
+            "TodoWrite": "allow",
+            "TaskCreate": "allow",
+            "TaskUpdate": "allow",
+            "TaskGet": "allow",
+            "TaskList": "allow",
+            "TaskStop": "allow",
+            "Skill": "allow",
+            "REPL": "allow",
+            "JavaScript": "allow",
+            "AskUserQuestion": "allow",
+            "ToolSearch": "allow",
+            "SendUserMessage": "allow"
+        },
         "claudeAiImport": {
             "enabled": True,
             "exportEnabled": True,
@@ -1078,6 +1109,7 @@ def switch_claude_mode(target_mode="toggle"):
 
     if target_mode == "regular":
         info("Switching Claude Desktop to REGULAR MODE (Official Anthropic Account)...")
+        remove_sandbox_network_config()
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
@@ -1148,6 +1180,7 @@ def switch_claude_mode(target_mode="toggle"):
         if not profile_id or not os.path.exists(os.path.join(CLAUDE_3P_DIR, f"{profile_id}.json")):
             info("No existing profile found. Recreating gateway profile...")
             run_model_configuration()
+            configure_sandbox_network()
             return
 
         if os.path.exists(meta_path):
@@ -1166,6 +1199,7 @@ def switch_claude_mode(target_mode="toggle"):
 
         success(f"Switched Claude Desktop to GATEWAY MODE (Profile ID: {profile_id}).")
         print(f"\033[1;32m[STATUS]\033[0m Claude Desktop is now routed through LiteLLM on http://127.0.0.1:{PORT}\n", file=sys.stderr)
+        configure_sandbox_network()
         post_setup_prompt()
 
 def status_service():
@@ -1354,6 +1388,116 @@ def uninstall_desktop_commander():
         except Exception as e:
             warn(f"Could not update Claude Desktop config: {e}")
 
+def configure_sandbox_network():
+    """Offer to configure the sandbox to allow all network domains in Claude Code settings.
+
+    Gateway mode enforces a strict network sandbox by default, blocking outbound
+    network except 127.0.0.1 and api.anthropic.com. This makes gh CLI, curl, npx,
+    npm install, web search from Bash, and similar tools fail with 403.
+    """
+    marker_path = os.path.join(APP_DIR, ".sandbox_configured")
+    if os.path.exists(marker_path):
+        return
+
+    print("", file=sys.stderr)
+    print("\033[1;36m[NETWORK]\033[0m Gateway mode enforces a strict network sandbox by default.", file=sys.stderr)
+    print("         This blocks outbound network from Bash commands — gh CLI, curl, npx,", file=sys.stderr)
+    print("         npm install, web search, and similar tools all fail with 403 errors.", file=sys.stderr)
+    print("         Allowing all domains restores full network access from Bash commands.", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    ans = safe_input("Configure sandbox to allow all network domains? (Y/n): ", "y").lower()
+    if ans not in ("y", "yes", ""):
+        info("Skipping sandbox network configuration. Bash commands will have restricted network access in Gateway mode.")
+        return
+
+    settings_path = os.path.expanduser("~/.claude/settings.json")
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+
+    settings = {}
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {}
+
+    # Save original sandbox state for restoration on uninstall/switch
+    backup_path = os.path.join(APP_DIR, ".sandbox_backup.json")
+    original_sandbox = settings.get("sandbox")
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump({"sandbox": original_sandbox}, f, indent=2)
+    except Exception:
+        pass
+
+    # Merge in the allowed domains without clobbering other keys
+    sandbox = settings.get("sandbox", {})
+    if not isinstance(sandbox, dict):
+        sandbox = {}
+    network = sandbox.get("network", {})
+    if not isinstance(network, dict):
+        network = {}
+
+    network["allowedHosts"] = ["*"]
+    sandbox["network"] = network
+    settings["sandbox"] = sandbox
+
+    try:
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+        success("Sandbox configured to allow all network domains in ~/.claude/settings.json")
+        with open(marker_path, "w", encoding="utf-8") as f:
+            f.write("1")
+    except Exception as e:
+        warn(f"Could not update {settings_path}: {e}")
+
+
+def remove_sandbox_network_config():
+    """Remove the sandbox network config added by configure_sandbox_network().
+
+    Restores the original sandbox settings from backup, or removes the sandbox
+    key entirely if there was no prior sandbox config.
+    """
+    marker_path = os.path.join(APP_DIR, ".sandbox_configured")
+    if not os.path.exists(marker_path):
+        return
+
+    settings_path = os.path.expanduser("~/.claude/settings.json")
+    backup_path = os.path.join(APP_DIR, ".sandbox_backup.json")
+
+    original_sandbox = None
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                backup = json.load(f)
+                original_sandbox = backup.get("sandbox")
+        except Exception:
+            pass
+
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+
+            if original_sandbox is not None:
+                settings["sandbox"] = original_sandbox
+            else:
+                settings.pop("sandbox", None)
+
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2)
+            success("Restored original sandbox settings in ~/.claude/settings.json")
+        except Exception as e:
+            warn(f"Could not restore {settings_path}: {e}")
+
+    for p in [marker_path, backup_path]:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+
 def launch_claude_cli(extra_args=None):
     """Launch Claude CLI with ANTHROPIC_BASE_URL pointing at the local proxy."""
     env = os.environ.copy()
@@ -1431,6 +1575,7 @@ def main():
         run_model_configuration()
         create_runner_script()
         install_service()
+        configure_sandbox_network()
         status_service()
         post_setup_prompt()
     elif cmd == "models":
@@ -1460,6 +1605,7 @@ def main():
             ans = safe_input("Remove Desktop Commander MCP as well? (Y/n): ", "y").lower()
             if ans in ("y", "yes", ""):
                 uninstall_desktop_commander()
+        remove_sandbox_network_config()
         uninstall_service()
     elif cmd in ("version", "--version", "-v"):
         print(f"Claude Any Model v{VERSION}")
