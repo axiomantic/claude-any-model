@@ -94,14 +94,7 @@ VERSION = "1.3.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-any-model"
-LEGACY_PLIST_LABELS = ["com.claude-openrouter-models", "com.claude-to-openrouter-proxy", "com.litellm.proxy"]
-
 APP_DIR = os.path.expanduser("~/.claude-any-model")
-LEGACY_APP_DIRS = [
-    os.path.expanduser("~/.claude-openrouter-models"),
-    os.path.expanduser("~/.claude-to-openrouter-proxy"),
-    os.path.expanduser("~/.litellm-proxy"),
-]
 PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{PLIST_LABEL}.plist")
 
 # Formatters
@@ -143,43 +136,12 @@ def detect_claude_3p_dir():
 
 CLAUDE_3P_DIR = detect_claude_3p_dir()
 
-def migrate_legacy_dirs():
+def ensure_dirs():
     os.makedirs(APP_DIR, exist_ok=True)
     os.makedirs(os.path.join(APP_DIR, "logs"), exist_ok=True)
     os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
-    launch_agents = os.path.expanduser("~/Library/LaunchAgents")
     if platform.system() == "Darwin":
-        os.makedirs(launch_agents, exist_ok=True)
-
-    for legacy in LEGACY_APP_DIRS:
-        if os.path.exists(legacy) and legacy != APP_DIR:
-            info(f"Migrating legacy directory {legacy} -> {APP_DIR}...")
-            for item in os.listdir(legacy):
-                src = os.path.join(legacy, item)
-                dst = os.path.join(APP_DIR, item)
-                if not os.path.exists(dst):
-                    try:
-                        shutil.move(src, dst)
-                    except Exception:
-                        pass
-            if not os.path.islink(legacy):
-                try:
-                    shutil.rmtree(legacy)
-                    os.symlink(APP_DIR, legacy)
-                    info(f"Created backward-compatible symlink: {legacy} -> {APP_DIR}")
-                except Exception:
-                    pass
-
-    if platform.system() == "Darwin":
-        for legacy_label in LEGACY_PLIST_LABELS:
-            legacy_plist = os.path.join(launch_agents, f"{legacy_label}.plist")
-            if os.path.exists(legacy_plist):
-                info(f"Unloading legacy launch agent {legacy_label}...")
-                subprocess.run(["launchctl", "unload", legacy_plist], capture_output=True)
-                try:
-                    os.remove(legacy_plist)
-                except Exception:
-                    pass
+        os.makedirs(os.path.expanduser("~/Library/LaunchAgents"), exist_ok=True)
 
 def is_claude_running():
     try:
@@ -915,14 +877,7 @@ def uninstall_service():
     if purge in ("y", "yes"):
         if os.path.exists(APP_DIR):
             shutil.rmtree(APP_DIR)
-        for legacy in LEGACY_APP_DIRS:
-            if os.path.islink(legacy):
-                try: os.remove(legacy)
-                except Exception: pass
-            elif os.path.exists(legacy):
-                try: shutil.rmtree(legacy)
-                except Exception: pass
-        success(f"Removed {APP_DIR} and legacy links.")
+        success(f"Removed {APP_DIR}.")
     success("Uninstall complete.")
 
 def get_active_claude_mode():
@@ -1147,7 +1102,7 @@ def usage():
     print("Usage: setup.sh {install|models|switch|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
     print("Commands:", file=sys.stderr)
     print("  switch [mode] - Easily toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
-    print("  install       - Full setup: migrate dirs, venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
+    print("  install       - Full setup: venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
     print("  models        - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
     print("  status        - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
     print("  start         - Starts the launchd daemon", file=sys.stderr)
@@ -1164,7 +1119,7 @@ def main():
         target = sys.argv[2] if len(sys.argv) > 2 else "toggle"
         switch_claude_mode(target)
     elif cmd == "install":
-        migrate_legacy_dirs()
+        ensure_dirs()
         setup_env()
         run_model_configuration()
         create_runner_script()
@@ -1172,7 +1127,7 @@ def main():
         status_service()
         post_setup_prompt()
     elif cmd == "models":
-        migrate_legacy_dirs()
+        ensure_dirs()
         run_model_configuration()
         if platform.system() == "Darwin":
             info("Restarting proxy to apply new YAML configuration...")
@@ -1183,7 +1138,7 @@ def main():
     elif cmd == "status":
         status_service()
     elif cmd == "restart":
-        migrate_legacy_dirs()
+        ensure_dirs()
         create_runner_script()
         install_service()
         status_service()
@@ -1192,9 +1147,6 @@ def main():
         success(f"Started {PLIST_LABEL}")
     elif cmd == "stop":
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
-        for legacy in LEGACY_PLIST_LABELS:
-            legacy_path = os.path.expanduser(f"~/Library/LaunchAgents/{legacy}.plist")
-            subprocess.run(["launchctl", "unload", legacy_path], capture_output=True)
         success("Stopped proxy daemon")
     elif cmd == "uninstall":
         uninstall_service()
