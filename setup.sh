@@ -331,12 +331,61 @@ def run_model_configuration():
             "tier_label": "OPUS TIER (Heavyweight Reasoning & Complex Architecture)",
             "claude_name": "claude-opus-4",
             "options": [
-                get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True, is_recommended=True),
-                get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2", "$0.97/$3.04", "1M Context", True),
-                get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
-                get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro (0813 GA)", "$1.19/$3.56", "1M Context", True),
-                get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "anthropic/claude-opus-5", "Anthropic: Claude Opus 5", "$5.00/$25.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "moonshotai/kimi-k3", "MoonshotAI: Kimi K3", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek: DeepSeek V4 Pro (0813 GA)", "$1.19/$3.56", "1M Context", True),
+                get_model_entry(catalog, "z-ai/glm-5.2", "Z.ai: GLM 5.2", "$0.97/$3.04", "1M Context", True),
+                get_model_entry(catalog, "openai/gpt-5.6-sol", "OpenAI: GPT-5.6 Sol", "$2.50/$15.00", "1M Context", True),
             ]
+        },
+        {
+            "tier_name": "sonnet",
+            "tier_label": "SONNET TIER (Fast Agentic Workhorse & Coding)",
+            "claude_name": "claude-sonnet-4-5",
+            "options": [
+                get_model_entry(catalog, "anthropic/claude-sonnet-5", "Anthropic: Claude Sonnet 5", "$2.00/$10.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "qwen/qwen3-coder-next", "Qwen: Qwen3 Coder Next", "$0.12/$0.80", "262k Context", False),
+                get_model_entry(catalog, "deepseek/deepseek-chat", "DeepSeek: DeepSeek V3 (chat)", "$0.26/$1.03", "163k Context", False),
+                get_model_entry(catalog, "qwen/qwen3.6-flash", "Qwen: Qwen3.6 Flash", "$0.19/$1.12", "1M Context", True),
+                get_model_entry(catalog, "google/gemini-3.7-flash", "Google: Gemini 3.7 Flash", "$0.38/$1.88", "1M Context", True),
+            ]
+        },
+        {
+            "tier_name": "haiku",
+            "tier_label": "HAIKU TIER (Maximum Speed & Low Cost)",
+            "claude_name": "claude-3-haiku-20240307",
+            "options": [
+                get_model_entry(catalog, "~deepseek/deepseek-v4-flash-latest", "DeepSeek: DeepSeek V4 Flash (Latest redirect)", "$0.07/$0.18", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen: Qwen3.7 Flash", "$0.03/$0.13", "1M Context", True),
+                get_model_entry(catalog, "openai/gpt-5.6-luna", "OpenAI: GPT-5.6 Luna", "$0.20/$1.20", "1M Context", True),
+                get_model_entry(catalog, "qwen/qwen3.5-9b", "Qwen: Qwen3.5 9B", "$0.10/$0.15", "262k Context", False),
+            ]
+        },
+        {
+            "tier_name": "fable",
+            "tier_label": "FABLE TIER (Ultra-Heavyweight Multi-Step Agent)",
+            "claude_name": "claude-fable-5",
+            "options": [
+                get_model_entry(catalog, "z-ai/glm-5.2", "Z.ai: GLM 5.2", "$0.97/$3.04", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "moonshotai/kimi-k3", "MoonshotAI: Kimi K3", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek: DeepSeek V4 Pro (0813 GA)", "$1.19/$3.56", "1M Context", True),
+                get_model_entry(catalog, "anthropic/claude-fable-5", "Anthropic: Claude Fable 5", "$10.00/$50.00", "1M Context", True),
+                get_model_entry(catalog, "openai/gpt-5.6-sol", "OpenAI: GPT-5.6 Sol", "$2.50/$15.00", "1M Context", True),
+            ]
+        },
+        {
+            "tier_name": "mythos",
+            "tier_label": "MYTHOS TIER (Frontier & Experimental Heavyweight)",
+            "claude_name": "claude-mythos-1",
+            "options": [
+                get_model_entry(catalog, "openai/gpt-5.6-sol", "OpenAI: GPT-5.6 Sol", "$2.50/$15.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "anthropic/claude-opus-5", "Anthropic: Claude Opus 5", "$5.00/$25.00", "1M Context", True),
+                get_model_entry(catalog, "moonshotai/kimi-k3", "MoonshotAI: Kimi K3", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek: DeepSeek V4 Pro (0813 GA)", "$1.19/$3.56", "1M Context", True),
+                get_model_entry(catalog, "z-ai/glm-5.2", "Z.ai: GLM 5.2", "$0.97/$3.04", "1M Context", True),
+            ]
+        }
+    ]
         },
         {
             "tier_name": "sonnet",
