@@ -6,21 +6,26 @@
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
 [![Release](https://img.shields.io/github/v/release/axiomantic/claude-openrouter-models?include_prereleases&color=green)](https://github.com/axiomantic/claude-openrouter-models/releases)
 
-Route Claude Desktop Third-Party Inference requests to models on OpenRouter (such as Kimi K3, Qwen3-Coder, DeepSeek V4 Flash, GLM-5.2) with live token pricing shown directly in Claude's model picker.
+Route Claude Desktop and Claude CLI requests to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, and GLM-5.2) with live token pricing shown directly in Claude's model picker.
 
 ---
 
-## Overview
+## What is This?
 
-Anthropic Claude Desktop includes a "Third-Party Inference" mode that allows routing requests to an external API gateway instead of Anthropic servers.
+Many people don't know that Anthropic built a **Third-Party Inference** mode into Claude Desktop. This built-in feature allows Claude Desktop to connect to any custom API gateway instead of being locked to Anthropic's cloud servers.
 
-`claude-openrouter-models` sets up a lightweight local LiteLLM gateway proxy and automatically configures Claude Desktop so you can use frontier and cost-effective models from OpenRouter inside Claude Desktop with real-time pricing and full context windows.
+`claude-openrouter-models` makes using this feature effortless:
+
+* **Cut Costs by 80–95%**: Use top-tier coding and reasoning models (like Qwen3-Coder at $0.12/1M input tokens vs. Claude 3.5 Sonnet at $3.00/1M).
+* **Live Pricing in the UI**: Shows real-time OpenRouter token prices directly in Claude Desktop's model picker dropdown (e.g., `Qwen3 Coder ($0.12/$0.80) [262k]`).
+* **Keep the Claude UI**: You get the full official Claude Desktop experience (chat, artifacts, projects, code sessions) powered by OpenRouter's model catalog.
+* **Works with Claude CLI**: Route terminal `claude` CLI coding sessions through the same local proxy.
 
 ### How It Works
 
-1. **Claude Desktop (3P Gateway Mode)** sends messages to the local gateway at `http://127.0.0.1:3010`.
-2. **Local Proxy (LiteLLM)** translates Anthropic Messages API formats and routes them to your chosen models on OpenRouter.
-3. **Automated Pricing & Catalog Sync**: Queries OpenRouter's live API to populate accurate per-token pricing labels directly inside Claude Desktop's model picker.
+1. **Claude Desktop or CLI** sends requests to a lightweight local gateway running on your machine (`http://127.0.0.1:3010`).
+2. **Local Proxy (LiteLLM)** translates Anthropic Messages API requests and forwards them to your selected models on OpenRouter.
+3. **Automated Catalog Sync**: Periodically fetches OpenRouter's live API catalog to update model aliases, context sizes, and pricing labels.
 
 ---
 
@@ -107,6 +112,20 @@ Your historical sessions, custom titles, and project groupings will immediately 
 ./setup.sh restart    # Restart local gateway daemon
 ./setup.sh uninstall  # Stop and remove background service and proxy files
 ```
+
+---
+
+## Using with Claude CLI (Claude Code)
+
+You can route the official `claude` terminal CLI through the same local proxy:
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:3010"
+export ANTHROPIC_API_KEY="dummy-key"
+claude
+```
+
+The CLI will route requests to your configured OpenRouter models while preserving prompt caching and context management.
 
 ---
 
