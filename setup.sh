@@ -750,10 +750,125 @@ def uninstall_service():
         success(f"Removed {APP_DIR} and legacy links.")
     success("Uninstall complete.")
 
+def get_active_claude_mode():
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    if not os.path.exists(meta_path):
+        return "regular"
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            applied_id = meta.get("appliedId")
+            if applied_id:
+                profile_path = os.path.join(CLAUDE_3P_DIR, f"{applied_id}.json")
+                if os.path.exists(profile_path):
+                    with open(profile_path, "r", encoding="utf-8") as pf:
+                        pdata = json.load(pf)
+                        if pdata.get("inferenceProvider") == "gateway":
+                            return "gateway"
+    except Exception:
+        pass
+    return "regular"
+
+def switch_claude_mode(target_mode="toggle"):
+    current = get_active_claude_mode()
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    state_file = os.path.join(APP_DIR, ".last_applied_id")
+
+    if not target_mode or target_mode == "toggle":
+        target_mode = "regular" if current == "gateway" else "gateway"
+
+    target_mode = target_mode.lower()
+    if target_mode in ("regular", "native", "1p", "official"):
+        target_mode = "regular"
+    elif target_mode in ("gateway", "3p", "openrouter", "proxy"):
+        target_mode = "gateway"
+    else:
+        error(f"Unknown mode '{target_mode}'. Options: 'gateway', 'regular', or 'toggle'.")
+        sys.exit(1)
+
+    if current == target_mode:
+        info(f"Claude Desktop is ALREADY in {target_mode.upper()} mode.")
+        return
+
+    check_claude_closed()
+
+    if target_mode == "regular":
+        info("Switching Claude Desktop to REGULAR MODE (Official Anthropic Account)...")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                old_id = meta.get("appliedId")
+                if old_id:
+                    with open(state_file, "w", encoding="utf-8") as sf:
+                        sf.write(old_id.strip())
+                meta["appliedId"] = None
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+            except Exception as e:
+                warn(f"Could not update _meta.json: {e}")
+
+        success("Switched Claude Desktop to REGULAR (Official Anthropic) Mode.")
+        print("\033[1;32m[STATUS]\033[0m Claude Desktop will now use your native Anthropic account directly.\n", file=sys.stderr)
+        post_setup_prompt()
+
+    elif target_mode == "gateway":
+        info("Switching Claude Desktop to GATEWAY MODE (OpenRouter Proxy)...")
+        if platform.system() == "Darwin":
+            install_service()
+
+        profile_id = None
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, "r", encoding="utf-8") as sf:
+                    profile_id = sf.read().strip()
+            except Exception:
+                pass
+
+        if not profile_id or not os.path.exists(os.path.join(CLAUDE_3P_DIR, f"{profile_id}.json")):
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    entries = meta.get("entries", [])
+                    if entries:
+                        profile_id = entries[0].get("id")
+                except Exception:
+                    pass
+
+        if not profile_id:
+            info("No existing profile found. Configuring gateway profile...")
+            run_model_configuration()
+            return
+
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                meta["appliedId"] = profile_id
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+            except Exception as e:
+                warn(f"Could not update _meta.json: {e}")
+
+        success(f"Switched Claude Desktop to GATEWAY MODE (Profile ID: {profile_id}).")
+        print(f"\033[1;32m[STATUS]\033[0m Claude Desktop is now routed through LiteLLM -> OpenRouter on http://127.0.0.1:{PORT}\n", file=sys.stderr)
+        post_setup_prompt()
+
 def status_service():
     header("Proxy & Claude 3P Status")
     info(f"Curated model recommendations last revisited: {MODELS_LAST_REVISITED}")
     
+    # Active mode
+    current_mode = get_active_claude_mode()
+    if current_mode == "gateway":
+        print(f"\033[1;34m[MODE]\033[0m Active Claude Desktop Mode: \033[1;32mGATEWAY MODE (OpenRouter Proxy)\033[0m", file=sys.stderr)
+        print("       (Tip: Run \033[1;36m./setup.sh switch regular\033[0m to switch to native Claude Pro/Team)", file=sys.stderr)
+    else:
+        print(f"\033[1;34m[MODE]\033[0m Active Claude Desktop Mode: \033[1;33mREGULAR MODE (Official Anthropic Account)\033[0m", file=sys.stderr)
+        print("       (Tip: Run \033[1;36m./setup.sh switch gateway\033[0m to activate OpenRouter Gateway mode)", file=sys.stderr)
+
+    print("", file=sys.stderr)
     if platform.system() == "Darwin":
         res = subprocess.run(["launchctl", "list", PLIST_LABEL], capture_output=True)
         if res.returncode == 0:
@@ -801,11 +916,10 @@ def status_service():
     else:
         warn(f"Could not verify liveliness on http://127.0.0.1:{PORT}. Check logs at {APP_DIR}/logs/litellm.err.log")
 
-
     print("", file=sys.stderr)
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
     if os.path.exists(meta_path):
-        info("Active Claude 3P Config Profile:")
+        info("Claude 3P Meta Configuration:")
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 print(json.dumps(json.load(f), indent=2), file=sys.stderr)
@@ -822,22 +936,26 @@ def post_setup_prompt():
 
 def usage():
     print(f"Claude OpenRouter Models Setup v{VERSION}", file=sys.stderr)
-    print("Usage: setup.sh {install|models|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
+    print("Usage: setup.sh {install|models|switch|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
     print("Commands:", file=sys.stderr)
-    print("  install    - Full setup: migrate dirs, venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
-    print("  models     - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
-    print("  status     - Checks launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
-    print("  start      - Starts the launchd daemon", file=sys.stderr)
-    print("  stop       - Stops the launchd daemon", file=sys.stderr)
-    print("  restart    - Restarts the launchd daemon", file=sys.stderr)
-    print("  uninstall  - Unregisters and deletes the launchd startup daemon", file=sys.stderr)
-    print("  version    - Displays the current proxy script version", file=sys.stderr)
+    print("  switch [mode] - Easily toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
+    print("  install       - Full setup: migrate dirs, venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
+    print("  models        - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
+    print("  status        - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
+    print("  start         - Starts the launchd daemon", file=sys.stderr)
+    print("  stop          - Stops the launchd daemon", file=sys.stderr)
+    print("  restart       - Restarts the launchd daemon", file=sys.stderr)
+    print("  uninstall     - Unregisters and deletes the launchd startup daemon", file=sys.stderr)
+    print("  version       - Displays the current proxy script version", file=sys.stderr)
     sys.exit(1)
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "install"
 
-    if cmd == "install":
+    if cmd in ("switch", "mode", "toggle"):
+        target = sys.argv[2] if len(sys.argv) > 2 else "toggle"
+        switch_claude_mode(target)
+    elif cmd == "install":
         migrate_legacy_dirs()
         setup_env()
         run_model_configuration()

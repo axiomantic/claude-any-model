@@ -105,14 +105,36 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 ---
 
+## Switching Between Gateway Mode and Regular Claude
+
+You can toggle between **Gateway Mode** (OpenRouter proxy) and **Regular Claude** (official Anthropic account) with a single command:
+
+```bash
+# Toggle between Gateway and Regular Claude
+./setup.sh switch
+
+# Or explicitly switch to a specific mode:
+./setup.sh switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team
+./setup.sh switch gateway    # Activates OpenRouter proxy mode
+```
+
+Check the active mode and proxy health at any time:
+```bash
+./setup.sh status
+```
+
+---
+
 ## CLI Commands
 
 ```bash
-./setup.sh models     # Switch or reconfigure tier models (fetches live OpenRouter prices)
-./setup.sh status     # Check background daemon health and active Claude 3P profile
-./setup.sh restart    # Restart local gateway daemon
-./setup.sh uninstall  # Stop and remove background service and proxy files
+./setup.sh switch [mode] # Toggle or switch mode ('gateway' or 'regular')
+./setup.sh models        # Switch or reconfigure tier models (fetches live OpenRouter prices)
+./setup.sh status        # Check active mode, background daemon health and Claude 3P profile
+./setup.sh restart       # Restart local gateway daemon
+./setup.sh uninstall     # Stop and remove background service and proxy files
 ```
+
 
 ---
 
