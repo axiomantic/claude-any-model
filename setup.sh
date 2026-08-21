@@ -232,8 +232,12 @@ def safe_input(prompt_text, default_val=""):
             return default_val
         val = line.strip()
         return val if val else default_val
-    except (EOFError, KeyboardInterrupt, Exception):
+    except KeyboardInterrupt:
+        print("\n\033[1;33m[ABORTED]\033[0m Configuration cancelled by user.", file=sys.stderr)
+        sys.exit(130)
+    except (EOFError, Exception):
         return default_val
+
 
 def read_current_config(app_dir):
     config_path = os.path.join(app_dir, "config.yaml")
@@ -535,18 +539,23 @@ def main():
     success(f"Synchronized Claude 3P config profile at: {profile_path}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\033[1;33m[ABORTED]\033[0m Configuration cancelled by user.", file=sys.stderr)
+        sys.exit(130)
 PYEOF
         chmod +x "${helper_script}"
     fi
 
     # Execute Python configuration with TTY stdin redirection if available
     if [ ! -t 0 ] && [ -e /dev/tty ]; then
-        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" < /dev/tty
+        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" < /dev/tty || exit $?
     else
-        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}"
+        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" || exit $?
     fi
 }
+
 
 
 
