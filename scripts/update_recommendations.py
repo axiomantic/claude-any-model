@@ -93,10 +93,27 @@ def build_compact_catalog(models):
         })
     return catalog_map, compact_list
 
-def perform_llm_semantic_analysis(api_key, compact_catalog, today_str):
+def perform_llm_semantic_analysis(api_key, catalog_map, compact_catalog, today_str):
     info("Querying LLM agent with online web search plugin via OpenRouter...")
 
-    model_name = os.environ.get("REASONING_MODEL", DEFAULT_REASONING_MODEL)
+    preferred_candidates = [
+        "perplexity/sonar-pro-search",
+        "perplexity/sonar",
+        "openai/gpt-5-mini",
+        "openai/gpt-4o-mini",
+        "google/gemini-3.7-flash",
+        "google/gemini-3.5-flash",
+        "anthropic/claude-3.5-haiku",
+        "deepseek/deepseek-chat"
+    ]
+
+    custom_model = os.environ.get("REASONING_MODEL")
+    if custom_model:
+        models_to_try = [custom_model]
+    else:
+        models_to_try = [m for m in preferred_candidates if m in catalog_map]
+        if not models_to_try:
+            models_to_try = preferred_candidates
 
     system_prompt = f"""You are an expert AI infrastructure architect and benchmark evaluator evaluating LLM price-performance as of {today_str}.
 Your task is to analyze the current state of OpenRouter models and recommend the best alternatives for Anthropic's Claude family tiers.
@@ -163,45 +180,56 @@ Catalog Sample (Top Available OpenRouter Models):
 
 Please perform web search on recent AI model releases and benchmarks, analyze the catalog, and return the structured JSON tier recommendations."""
 
-    payload = {
-        "model": model_name,
-        "plugins": [{"id": "web"}],
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.2
-    }
-
-    req = urllib.request.Request(
-        OPENROUTER_CHAT_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/axiomantic/claude-openrouter-models",
-            "X-Title": "Claude OpenRouter Models Recommender"
+    for model_name in models_to_try:
+        info(f"Attempting semantic evaluation with model: {model_name}...")
+        
+        plugins = [{"id": "web"}] if not model_name.startswith("perplexity/") else []
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.2
         }
-    )
+        if plugins:
+            payload["plugins"] = plugins
 
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode())
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
-            # Extract JSON block
-            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
-            if json_match:
-                raw_json = json_match.group(1)
-            else:
-                raw_json = content.strip()
-            
-            parsed = json.loads(raw_json)
-            success("Successfully received and parsed LLM semantic recommendations.")
-            return parsed
-    except Exception as e:
-        error(f"LLM evaluation request failed: {e}")
-        return None
+        req = urllib.request.Request(
+            OPENROUTER_CHAT_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/axiomantic/claude-openrouter-models",
+                "X-Title": "Claude OpenRouter Models Recommender"
+            }
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode())
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                
+                # Extract JSON block
+                json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+                if json_match:
+                    raw_json = json_match.group(1)
+                else:
+                    raw_json = content.strip()
+                
+                parsed = json.loads(raw_json)
+                success(f"Successfully received semantic recommendations using {model_name}.")
+                return parsed
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8", errors="ignore")
+            warn(f"Model {model_name} HTTP Error {he.code}: {err_body}")
+        except Exception as e:
+            warn(f"Model {model_name} failed: {e}")
+
+    error("All candidate models failed to return a valid evaluation.")
+    return None
+
 
 def generate_markdown_report(analysis_result, catalog_map, today_str):
     lines = [
@@ -343,8 +371,9 @@ def main():
 
     catalog_map, compact_catalog = build_compact_catalog(catalog)
 
-    analysis_result = perform_llm_semantic_analysis(api_key, compact_catalog, today_str)
+    analysis_result = perform_llm_semantic_analysis(api_key, catalog_map, compact_catalog, today_str)
     if not analysis_result:
+
         error("Could not obtain valid semantic analysis from LLM.")
         sys.exit(1)
 
