@@ -1,236 +1,88 @@
 #!/usr/bin/env bash
+""":"
+# ==============================================================================
+# 🐍💀 Bash/Python Polyglot Bootstrapper (Pymera pattern)
+# Minimal Bash layer ensures Python 3 virtual environment with LiteLLM exists,
+# then seamlessly re-executes this same file as a Python program.
+# ==============================================================================
 set -euo pipefail
 
-# Script and Service Version
-VERSION="1.2.0"
-MODELS_LAST_REVISITED="2026-08-21"
-
-
-
-# Configuration paths
 APP_DIR="${HOME}/.claude-openrouter-models"
-LEGACY_APP_DIRS=("${HOME}/.claude-to-openrouter-proxy" "${HOME}/.litellm-proxy")
-PLIST_LABEL="com.claude-openrouter-models"
-LEGACY_PLIST_LABELS=("com.claude-to-openrouter-proxy" "com.litellm.proxy")
-PLIST_PATH="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
-PORT=3010
+VENV_DIR="${APP_DIR}/venv"
+PYTHON_BIN="${VENV_DIR}/bin/python3"
 
-# Detect Script Directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || echo "")"
+# 1. Verify system Python 3 exists
+if ! command -v python3 &>/dev/null; then
+    echo -e "\033[1;31m[ERROR]\033[0m Python 3 is required but not found in PATH." >&2
+    exit 1
+fi
 
-
-# Detect Claude 3P config directory by OS
-detect_claude_3p_dir() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "${HOME}/Library/Application Support/Claude-3p/configLibrary"
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        echo "${HOME}/.config/Claude-3p/configLibrary"
-    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
-        echo "${LOCALAPPDATA:-$HOME/AppData/Local}/Claude-3p/configLibrary"
-    else
-        echo "${HOME}/Library/Application Support/Claude-3p/configLibrary"
-    fi
-}
-
-CLAUDE_3P_DIR="$(detect_claude_3p_dir)"
-
-
-# Helper formatting
-info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
-success() { echo -e "\033[1;32m[SUCCESS]\033[0m $*"; }
-warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
-error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; }
-header() {
-    echo -e "\n\033[1;36m============================================================\033[0m"
-    echo -e "\033[1;36m  $* (v${VERSION})\033[0m"
-    echo -e "\033[1;36m============================================================\033[0m"
-}
-
-# TTY-aware interactive prompt helper for curl | bash one-liners
-prompt_read() {
-    local prompt_msg="$1"
-    local out_var="$2"
-    local default_val="${3:-}"
-    local is_secret="${4:-false}"
-    local user_input=""
-
-    if [ -t 0 ]; then
-        if [ "$is_secret" = "true" ]; then
-            read -rsp "$prompt_msg" user_input
-            echo ""
-        else
-            read -rp "$prompt_msg" user_input
-        fi
-    elif [ -e /dev/tty ]; then
-        if [ "$is_secret" = "true" ]; then
-            read -rsp "$prompt_msg" user_input < /dev/tty
-            echo ""
-        else
-            read -rp "$prompt_msg" user_input < /dev/tty
-        fi
-    else
-        user_input="$default_val"
-    fi
-
-    printf -v "$out_var" "%s" "${user_input:-$default_val}"
-}
-
-# Migrate legacy directories and launchd services if present
-migrate_legacy_dir() {
-    shopt -s dotglob nullglob
-    for legacy_dir in "${LEGACY_APP_DIRS[@]}"; do
-        if [[ -d "${legacy_dir}" && ! -L "${legacy_dir}" ]]; then
-            info "Migrating legacy proxy directory from ${legacy_dir} to ${APP_DIR}..."
-            if [[ ! -d "${APP_DIR}" ]]; then
-                mv "${legacy_dir}" "${APP_DIR}"
-                ln -s "${APP_DIR}" "${legacy_dir}"
-                success "Moved ${legacy_dir} -> ${APP_DIR} and created compatibility symlink."
-            else
-                cp -rn "${legacy_dir}/"* "${APP_DIR}/" 2>/dev/null || true
-                rm -rf "${legacy_dir}"
-                ln -s "${APP_DIR}" "${legacy_dir}"
-                success "Merged ${legacy_dir} into ${APP_DIR} and created compatibility symlink."
-            fi
-        elif [[ ! -e "${legacy_dir}" && -d "${APP_DIR}" ]]; then
-            ln -s "${APP_DIR}" "${legacy_dir}"
-        fi
-    done
-    shopt -u dotglob nullglob
-
-
-    # Unload and remove legacy launchd plists
-    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-        local legacy_plist="${HOME}/Library/LaunchAgents/${legacy_label}.plist"
-        if [[ -f "${legacy_plist}" ]]; then
-            info "Unloading legacy launchd daemon (${legacy_label})..."
-            launchctl unload "${legacy_plist}" 2>/dev/null || true
-            rm -f "${legacy_plist}"
-        fi
-    done
-}
-
-ensure_dirs() {
+# 2. Bootstrap virtual environment with dependencies if needed
+if [ ! -x "${PYTHON_BIN}" ]; then
+    echo -e "\033[1;34m[INFO]\033[0m Setting up Python environment in ${VENV_DIR}..."
     mkdir -p "${APP_DIR}"
-    mkdir -p "${HOME}/Library/LaunchAgents"
-    mkdir -p "${APP_DIR}/logs"
-    mkdir -p "${CLAUDE_3P_DIR}"
-    migrate_legacy_dir
-}
+    python3 -m venv "${VENV_DIR}"
+    "${VENV_DIR}/bin/pip" install --quiet --upgrade pip
+    "${VENV_DIR}/bin/pip" install --quiet 'fastapi<0.140' 'litellm[proxy]'
+fi
 
+# 3. Determine script location (handle curl one-liner pipe vs local file)
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_PATH="${BASH_SOURCE[0]}"
+else
+    mkdir -p "${APP_DIR}"
+    SCRIPT_PATH="${APP_DIR}/setup.sh"
+    curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models/main/setup.sh -o "${SCRIPT_PATH}" 2>/dev/null || true
+    chmod +x "${SCRIPT_PATH}"
+fi
 
-# Check if Claude Desktop is running and block until user closes it
-check_claude_closed() {
-    local running=false
-    while true; do
-        if pgrep -i -x "Claude" >/dev/null 2>&1 || pgrep -i -f "Claude.app/Contents/MacOS" >/dev/null 2>&1; then
-            running=true
-            echo ""
-            warn "Claude Desktop is currently RUNNING."
-            echo -e "\033[1;33m[ACTION REQUIRED]\033[0m Please quit Claude Desktop (Cmd+Q) to safely apply third-party configuration."
-            prompt_read "Press [Enter] once Claude Desktop has exited (or Ctrl+C to abort)..." _ ""
-        else
-            if [ "$running" = true ]; then
-                success "Claude Desktop is closed. Proceeding..."
-            fi
-            break
-        fi
-    done
-}
-
-# Validate OpenRouter API key against OpenRouter API
-validate_openrouter_key() {
-    local key="$1"
-    info "Validating OpenRouter API key..."
-    local res
-    res=$(curl -s -w "%{http_code}" -o /dev/null -H "Authorization: Bearer ${key}" "https://openrouter.ai/api/v1/auth/key" 2>/dev/null || echo "000")
-    if [[ "$res" == "200" ]]; then
-        success "OpenRouter API key verified successfully."
-        return 0
-    else
-        warn "Could not verify OpenRouter key (HTTP $res). Proceeding anyway in case of offline/firewall restrictions."
-        return 0
-    fi
-}
-
-setup_env() {
-    if [[ -f "${APP_DIR}/.env" ]]; then
-        info "Existing .env file found at ${APP_DIR}/.env."
-        local choice=""
-        prompt_read "Do you want to overwrite your OpenRouter API key? (y/N): " choice "n"
-        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
-            return
-        fi
-    fi
-
-    echo ""
-    local api_key=""
-    prompt_read "Enter your OpenRouter API Key (sk-or-v1-...): " api_key "" "true"
-
-    if [[ -z "${api_key}" ]]; then
-        error "API key cannot be empty."
-        exit 1
-    fi
-
-    validate_openrouter_key "${api_key}"
-
-    cat <<EOF > "${APP_DIR}/.env"
-OPENROUTER_API_KEY=${api_key}
-PORT=${PORT}
-EOF
-    chmod 600 "${APP_DIR}/.env"
-    success "Environment file written to ${APP_DIR}/.env"
-}
-
-setup_venv() {
-    info "Setting up Python virtual environment in ${APP_DIR}/venv..."
-    if ! command -v python3 &>/dev/null; then
-        error "Python 3 is required but was not found in PATH."
-        exit 1
-    fi
-
-    if [[ ! -d "${APP_DIR}/venv" ]]; then
-        python3 -m venv "${APP_DIR}/venv"
-    fi
-
-    info "Installing dependencies inside virtual environment..."
-    "${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip
-    "${APP_DIR}/venv/bin/pip" install --quiet 'fastapi<0.140'
-    "${APP_DIR}/venv/bin/pip" install --quiet 'litellm[proxy]'
-    success "LiteLLM installed successfully."
-}
-
-# Python-driven Interactive Model Selection & Configuration Sync
-run_model_configuration() {
-    # Ensure Claude is closed before modifying the JSON files
-    check_claude_closed
-
-    local helper_script="${APP_DIR}/configure_proxy.py"
-    cat <<'PYEOF' > "${helper_script}"
-
-#!/usr/bin/env python3
+# 4. Re-execute this file using the virtualenv Python interpreter
+if [ ! -t 0 ] && [ -e /dev/tty ]; then
+    exec "${PYTHON_BIN}" "${SCRIPT_PATH}" "$@" < /dev/tty
+else
+    exec "${PYTHON_BIN}" "${SCRIPT_PATH}" "$@"
+fi
+exit 0
 """
-Claude to OpenRouter Proxy - Interactive Tier & Model Configuration
-Version: 1.2.0
-"""
+
+# ==============================================================================
+# 🚀 Claude OpenRouter Models — Python Implementation
+# ==============================================================================
 import sys
 import os
 import re
 import json
 import uuid
+import time
+import shutil
+import getpass
+import platform
+import subprocess
 import urllib.request
 from datetime import datetime
 
-# Date when curated tier recommendations were last reviewed/updated
+# Script & Daemon Metadata
+VERSION = "1.2.0"
 MODELS_LAST_REVISITED = "2026-08-21"
+PORT = 3010
+PLIST_LABEL = "com.claude-openrouter-models"
+LEGACY_PLIST_LABELS = ["com.claude-to-openrouter-proxy", "com.litellm.proxy"]
 
-# Helper formatting
+APP_DIR = os.path.expanduser("~/.claude-openrouter-models")
+LEGACY_APP_DIRS = [
+    os.path.expanduser("~/.claude-to-openrouter-proxy"),
+    os.path.expanduser("~/.litellm-proxy"),
+]
+PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{PLIST_LABEL}.plist")
+
+# Formatters
 def info(msg): print(f"\033[1;34m[INFO]\033[0m {msg}", file=sys.stderr)
-
 def success(msg): print(f"\033[1;32m[SUCCESS]\033[0m {msg}", file=sys.stderr)
 def warn(msg): print(f"\033[1;33m[WARN]\033[0m {msg}", file=sys.stderr)
+def error(msg): print(f"\033[1;31m[ERROR]\033[0m {msg}", file=sys.stderr)
 def header(msg):
     print(f"\n\033[1;36m============================================================\033[0m", file=sys.stderr)
-    print(f"\033[1;36m  {msg}\033[0m", file=sys.stderr)
+    print(f"\033[1;36m  {msg} (v{VERSION})\033[0m", file=sys.stderr)
     print(f"\033[1;36m============================================================\033[0m", file=sys.stderr)
 
 def safe_input(prompt_text, default_val=""):
@@ -248,9 +100,128 @@ def safe_input(prompt_text, default_val=""):
     except (EOFError, Exception):
         return default_val
 
+def detect_claude_3p_dir():
+    system = platform.system()
+    if system == "Darwin":
+        return os.path.expanduser("~/Library/Application Support/Claude-3p/configLibrary")
+    elif system == "Linux":
+        return os.path.expanduser("~/.config/Claude-3p/configLibrary")
+    elif system == "Windows":
+        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
+        return os.path.join(local_app_data, "Claude-3p", "configLibrary")
+    else:
+        return os.path.expanduser("~/Library/Application Support/Claude-3p/configLibrary")
 
-def read_current_config(app_dir):
-    config_path = os.path.join(app_dir, "config.yaml")
+CLAUDE_3P_DIR = detect_claude_3p_dir()
+
+def migrate_legacy_dirs():
+    os.makedirs(APP_DIR, exist_ok=True)
+    os.makedirs(os.path.join(APP_DIR, "logs"), exist_ok=True)
+    os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
+    launch_agents = os.path.expanduser("~/Library/LaunchAgents")
+    if platform.system() == "Darwin":
+        os.makedirs(launch_agents, exist_ok=True)
+
+    for legacy in LEGACY_APP_DIRS:
+        if os.path.exists(legacy) and not os.path.islink(legacy):
+            info(f"Migrating legacy directory from {legacy} to {APP_DIR}...")
+            # Copy all files
+            for item in os.listdir(legacy):
+                src = os.path.join(legacy, item)
+                dst = os.path.join(APP_DIR, item)
+                if not os.path.exists(dst):
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+            shutil.rmtree(legacy)
+            try:
+                os.symlink(APP_DIR, legacy)
+                success(f"Moved {legacy} -> {APP_DIR} and created compatibility symlink.")
+            except Exception:
+                pass
+        elif not os.path.exists(legacy):
+            try:
+                os.symlink(APP_DIR, legacy)
+            except Exception:
+                pass
+
+    if platform.system() == "Darwin":
+        for legacy_label in LEGACY_PLIST_LABELS:
+            legacy_plist = os.path.expanduser(f"~/Library/LaunchAgents/{legacy_label}.plist")
+            if os.path.exists(legacy_plist):
+                info(f"Unloading legacy launchd daemon ({legacy_label})...")
+                subprocess.run(["launchctl", "unload", legacy_plist], capture_output=True)
+                try:
+                    os.remove(legacy_plist)
+                except Exception:
+                    pass
+
+def is_claude_running():
+    try:
+        res = subprocess.run(["pgrep", "-i", "Claude"], capture_output=True, text=True)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+def check_claude_closed():
+    running = False
+    while is_claude_running():
+        running = True
+        print("", file=sys.stderr)
+        warn("Claude Desktop is currently RUNNING.")
+        print("\033[1;33m[ACTION REQUIRED]\033[0m Please quit Claude Desktop (Cmd+Q) to safely apply configuration.", file=sys.stderr)
+        safe_input("Press [Enter] once Claude Desktop has exited (or Ctrl+C to abort)...", "")
+
+    if running:
+        success("Claude Desktop is closed. Proceeding...")
+
+def validate_openrouter_key(api_key):
+    info("Validating OpenRouter API key...")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/auth/key",
+        headers={"Authorization": f"Bearer {api_key}", "User-Agent": "Claude-OpenRouter-Models/1.2.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status == 200:
+                success("OpenRouter API key verified successfully.")
+                return True
+    except Exception as e:
+        warn(f"Could not verify OpenRouter key ({e}). Proceeding anyway in case of offline/firewall restrictions.")
+    return True
+
+def setup_env():
+    env_path = os.path.join(APP_DIR, ".env")
+    if os.path.exists(env_path):
+        info(f"Existing .env file found at {env_path}.")
+        choice = safe_input("Do you want to overwrite your OpenRouter API key? (y/N): ", "n")
+        if choice.lower() != "y":
+            return
+
+    print("", file=sys.stderr)
+    try:
+        if sys.stdin.isatty():
+            api_key = getpass.getpass("Enter your OpenRouter API Key (sk-or-v1-...): ")
+        else:
+            api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
+    except Exception:
+        api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
+
+    api_key = api_key.strip()
+    if not api_key:
+        error("API key cannot be empty.")
+        sys.exit(1)
+
+    validate_openrouter_key(api_key)
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(f"OPENROUTER_API_KEY={api_key}\nPORT={PORT}\n")
+    os.chmod(env_path, 0o600)
+    success(f"Environment file written to {env_path}")
+
+def read_current_config():
+    config_path = os.path.join(APP_DIR, "config.yaml")
     current_map = {}
     if os.path.exists(config_path):
         try:
@@ -271,7 +242,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-Proxy-Setup/1.2.0"}
+        headers={"User-Agent": "Claude-OpenRouter-Models/1.2.0"}
     )
     catalog = {}
     try:
@@ -321,14 +292,10 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
         "is_recommended": is_recommended
     }
 
-def main():
-    app_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.claude-openrouter-models")
-    claude_3p_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/Library/Application Support/Claude-3p/configLibrary")
-    port = sys.argv[3] if len(sys.argv) > 3 else "3010"
-
-
+def run_model_configuration():
+    check_claude_closed()
     catalog = fetch_openrouter_catalog()
-    current_config = read_current_config(app_dir)
+    current_config = read_current_config()
 
     tiers = [
         {
@@ -394,7 +361,6 @@ def main():
     print("Select your target model for each Anthropic family tier.", file=sys.stderr)
     print("Pricing displayed as ($In / $Out per 1M tokens) fetched from OpenRouter.\n", file=sys.stderr)
 
-
     selections = []
 
     for idx, t in enumerate(tiers, 1):
@@ -423,7 +389,6 @@ def main():
         custom_num = len(t["options"]) + 1
         print(f"{custom_num}) Custom OpenRouter Model ID", file=sys.stderr)
 
-        # Default to current selection if set, otherwise default to recommended
         if matched_current_idx is not None:
             default_choice = str(matched_current_idx)
             default_hint = f"default={default_choice} (Current)"
@@ -468,8 +433,8 @@ def main():
         print("", file=sys.stderr)
 
     # 1. Write LiteLLM config.yaml
-    os.makedirs(app_dir, exist_ok=True)
-    config_yaml_path = os.path.join(app_dir, "config.yaml")
+    os.makedirs(APP_DIR, exist_ok=True)
+    config_yaml_path = os.path.join(APP_DIR, "config.yaml")
     if os.path.exists(config_yaml_path):
         backup_yaml = f"{config_yaml_path}.bak.{int(datetime.now().timestamp())}"
         try:
@@ -493,8 +458,8 @@ def main():
     success(f"Generated LiteLLM config at: {config_yaml_path}")
 
     # 2. Write Claude 3P configLibrary JSON
-    os.makedirs(claude_3p_dir, exist_ok=True)
-    meta_path = os.path.join(claude_3p_dir, "_meta.json")
+    os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
     applied_id = None
     if os.path.exists(meta_path):
         try:
@@ -513,7 +478,7 @@ def main():
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
-    profile_path = os.path.join(claude_3p_dir, f"{applied_id}.json")
+    profile_path = os.path.join(CLAUDE_3P_DIR, f"{applied_id}.json")
     if os.path.exists(profile_path):
         backup_profile = f"{profile_path}.bak.{int(datetime.now().timestamp())}"
         try:
@@ -534,7 +499,7 @@ def main():
         })
 
     config_data = {
-        "inferenceGatewayBaseUrl": f"http://127.0.0.1:{port}",
+        "inferenceGatewayBaseUrl": f"http://127.0.0.1:{PORT}",
         "inferenceGatewayApiKey": "dummy-key",
         "modelDiscoveryEnabled": False,
         "inferenceModels": inference_models,
@@ -551,269 +516,203 @@ def main():
         json.dump(config_data, f, indent=2)
     success(f"Synchronized Claude 3P config profile at: {profile_path}")
 
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\033[1;33m[ABORTED]\033[0m Configuration cancelled by user.", file=sys.stderr)
-        sys.exit(130)
-PYEOF
-    chmod +x "${helper_script}"
-
-    # Execute Python configuration with TTY stdin redirection if available
-    if [ ! -t 0 ] && [ -e /dev/tty ]; then
-        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" < /dev/tty || exit $?
-    else
-        python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" || exit $?
-    fi
-}
-
-
-
-
-
-create_runner_script() {
-    local runner="${APP_DIR}/run_proxy.sh"
-    cat <<'EOF' > "${runner}"
-#!/usr/bin/env bash
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+def create_runner_script():
+    runner = os.path.join(APP_DIR, "run_proxy.sh")
+    content = f"""#!/usr/bin/env bash
+DIR="{APP_DIR}"
 if [ -f "$DIR/.env" ]; then
     set -a
     source "$DIR/.env"
     set +a
 fi
-exec "$DIR/venv/bin/litellm" --config "$DIR/config.yaml" --port "${PORT:-3010}" --host 127.0.0.1
-EOF
-    chmod +x "${runner}"
-}
+exec "$DIR/venv/bin/litellm" --config "$DIR/config.yaml" --port "${{PORT:-{PORT}}}" --host 127.0.0.1
+"""
+    with open(runner, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.chmod(runner, 0o755)
 
-install_service() {
-    info "Creating macOS launchd service plist at ${PLIST_PATH}..."
-    cat <<EOF > "${PLIST_PATH}"
-<?xml version="1.0" encoding="UTF-8"?>
+def install_service():
+    if platform.system() != "Darwin":
+        info("Background service auto-start is only configured for macOS launchd.")
+        return
+
+    info(f"Creating macOS launchd service plist at {PLIST_PATH}...")
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>${PLIST_LABEL}</string>
+    <string>{PLIST_LABEL}</string>
     <key>Version</key>
-    <string>${VERSION}</string>
+    <string>{VERSION}</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>${APP_DIR}/run_proxy.sh</string>
+        <string>{APP_DIR}/run_proxy.sh</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>${APP_DIR}/logs/litellm.out.log</string>
+    <string>{APP_DIR}/logs/litellm.out.log</string>
     <key>StandardErrorPath</key>
-    <string>${APP_DIR}/logs/litellm.err.log</string>
+    <string>{APP_DIR}/logs/litellm.err.log</string>
     <key>WorkingDirectory</key>
-    <string>${APP_DIR}</string>
+    <string>{APP_DIR}</string>
 </dict>
 </plist>
-EOF
+"""
+    with open(PLIST_PATH, "w", encoding="utf-8") as f:
+        f.write(plist_content)
 
-    info "Loading service into launchd..."
-    launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-    launchctl load "${PLIST_PATH}"
+    info("Loading service into launchd...")
+    subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
+    subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
 
-    success "Service installed and started as a background daemon (${PLIST_LABEL} v${VERSION})."
-    echo "Logs are available at: ${APP_DIR}/logs/"
-}
+    success(f"Service installed and started as background daemon ({PLIST_LABEL} v{VERSION}).")
+    print(f"Logs are available at: {APP_DIR}/logs/", file=sys.stderr)
 
-uninstall_service() {
-    info "Stopping and removing launchd service..."
-    if [[ -f "${PLIST_PATH}" ]]; then
-        launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-        rm -f "${PLIST_PATH}"
-        success "Removed launchd plist: ${PLIST_PATH}"
-    fi
-    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-        local legacy_plist="${HOME}/Library/LaunchAgents/${legacy_label}.plist"
-        if [[ -f "${legacy_plist}" ]]; then
-            launchctl unload "${legacy_plist}" 2>/dev/null || true
-            rm -f "${legacy_plist}"
-        fi
-    done
+def uninstall_service():
+    info("Stopping and removing launchd service...")
+    if os.path.exists(PLIST_PATH):
+        subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
+        try:
+            os.remove(PLIST_PATH)
+        except Exception:
+            pass
+        success(f"Removed launchd plist: {PLIST_PATH}")
 
-    local clean_all=""
-    prompt_read "Do you also want to remove all configuration, logs, and venv in ${APP_DIR}? (y/N): " clean_all "n"
-    if [[ "$clean_all" =~ ^[Yy]$ ]]; then
-        rm -rf "${APP_DIR}" "${LEGACY_APP_DIRS[@]}"
-        success "Removed ${APP_DIR} and legacy links"
-    fi
-    success "Uninstall complete."
-}
+    for legacy in LEGACY_PLIST_LABELS:
+        legacy_path = os.path.expanduser(f"~/Library/LaunchAgents/{legacy}.plist")
+        if os.path.exists(legacy_path):
+            subprocess.run(["launchctl", "unload", legacy_path], capture_output=True)
+            try:
+                os.remove(legacy_path)
+            except Exception:
+                pass
 
-status_service() {
-    header "Proxy & Claude 3P Status"
-    info "Curated model recommendations last revisited: ${MODELS_LAST_REVISITED}"
-    if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
-        success "Daemon ${PLIST_LABEL} (v${VERSION}) is RUNNING."
-    else
-        local found_legacy=false
-        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-            if launchctl list "${legacy_label}" >/dev/null 2>&1; then
-                warn "Legacy daemon ${legacy_label} is running. Run './setup.sh restart' to migrate."
-                found_legacy=true
-                break
-            fi
-        done
-        if [ "$found_legacy" = false ]; then
-            warn "Daemon ${PLIST_LABEL} is NOT running."
-        fi
-    fi
+    clean_all = safe_input(f"Do you also want to remove all configuration, logs, and venv in {APP_DIR}? (y/N): ", "n")
+    if clean_all.lower() == "y":
+        shutil.rmtree(APP_DIR, ignore_errors=True)
+        for legacy in LEGACY_APP_DIRS:
+            if os.path.islink(legacy):
+                try:
+                    os.unlink(legacy)
+                except Exception:
+                    pass
+        success(f"Removed {APP_DIR} and legacy links.")
+    success("Uninstall complete.")
 
-    echo ""
-    info "Testing endpoint connectivity on port ${PORT}..."
-    local max_attempts=6
-    local attempt=1
-    local success=false
+def status_service():
+    header("Proxy & Claude 3P Status")
+    info(f"Curated model recommendations last revisited: {MODELS_LAST_REVISITED}")
+    
+    if platform.system() == "Darwin":
+        res = subprocess.run(["launchctl", "list", PLIST_LABEL], capture_output=True)
+        if res.returncode == 0:
+            success(f"Daemon {PLIST_LABEL} (v{VERSION}) is RUNNING.")
+        else:
+            warn(f"Daemon {PLIST_LABEL} is NOT running.")
 
-    while [ $attempt -le $max_attempts ]; do
-        local code
-        code=$(curl -s -w "%{http_code}" -o /dev/null "http://127.0.0.1:${PORT}/health/liveliness" 2>/dev/null || echo "000")
-        if [[ "$code" == "200" ]] || curl -s "http://127.0.0.1:${PORT}/health/liveliness" 2>/dev/null | grep -q "alive"; then
-            success=true
-            break
-        fi
-        info "Waiting for proxy to respond (attempt $attempt/$max_attempts)..."
-        sleep 2
-        ((attempt++))
-    done
+    print("", file=sys.stderr)
+    info(f"Testing endpoint connectivity on port {PORT}...")
+    is_alive = False
+    for attempt in range(1, 7):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT}/health/liveliness")
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                if resp.status == 200 or b"alive" in resp.read():
+                    is_alive = True
+                    break
+        except Exception:
+            pass
+        info(f"Waiting for proxy to respond (attempt {attempt}/6)...")
+        time.sleep(2)
 
-    if [ "$success" = true ]; then
-        success "Proxy is active and healthy on http://127.0.0.1:${PORT}"
-    else
-        warn "Could not verify liveliness on http://127.0.0.1:${PORT}. Check logs at ${APP_DIR}/logs/litellm.err.log"
-    fi
+    if is_alive:
+        success(f"Proxy is active and healthy on http://127.0.0.1:{PORT}")
+    else:
+        warn(f"Could not verify liveliness on http://127.0.0.1:{PORT}. Check logs at {APP_DIR}/logs/litellm.err.log")
 
-    echo ""
-    if [[ -f "${CLAUDE_3P_DIR}/_meta.json" ]]; then
-        info "Active Claude 3P Config Profile:"
-        cat "${CLAUDE_3P_DIR}/_meta.json"
-    fi
-}
+    print("", file=sys.stderr)
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    if os.path.exists(meta_path):
+        info("Active Claude 3P Config Profile:")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                print(json.dumps(json.load(f), indent=2), file=sys.stderr)
+        except Exception:
+            pass
 
-post_setup_prompt() {
-    echo ""
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        local launch_choice=""
-        prompt_read "Would you like to launch Claude Desktop now? (Y/n): " launch_choice "y"
-        if [[ "$launch_choice" =~ ^[Yy]$ ]]; then
-            open -a Claude 2>/dev/null || open -a "Claude Desktop" 2>/dev/null || warn "Could not find Claude in Applications."
-            success "Claude Desktop launched."
-        fi
-    fi
-}
+def post_setup_prompt():
+    print("", file=sys.stderr)
+    if platform.system() == "Darwin":
+        choice = safe_input("Would you like to launch Claude Desktop now? (Y/n): ", "y")
+        if choice.lower() == "y":
+            subprocess.run(["open", "-a", "Claude"], capture_output=True)
+            success("Claude Desktop launched.")
 
-usage() {
-    echo "Claude OpenRouter Models Setup v${VERSION}"
-    echo "Usage: $0 {install|models|status|restart|stop|start|uninstall|version}"
-    echo ""
-    echo "Commands:"
-    echo "  install    - Full setup: migrate dirs, venv, API key, live model selector, Claude 3P config & launchd daemon"
-    echo "  models     - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)"
-    echo "  status     - Checks launchd daemon status, proxy connectivity, and Claude 3P profiles"
-    echo "  start      - Starts the launchd daemon"
-    echo "  stop       - Stops the launchd daemon"
-    echo "  restart    - Restarts the launchd daemon (and migrates legacy service if needed)"
-    echo "  uninstall  - Unregisters and deletes the launchd startup daemon"
-    echo "  version    - Displays the current proxy script version"
-    exit 1
-}
+def usage():
+    print(f"Claude OpenRouter Models Setup v{VERSION}", file=sys.stderr)
+    print("Usage: setup.sh {install|models|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
+    print("Commands:", file=sys.stderr)
+    print("  install    - Full setup: migrate dirs, venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
+    print("  models     - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
+    print("  status     - Checks launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
+    print("  start      - Starts the launchd daemon", file=sys.stderr)
+    print("  stop       - Stops the launchd daemon", file=sys.stderr)
+    print("  restart    - Restarts the launchd daemon", file=sys.stderr)
+    print("  uninstall  - Unregisters and deletes the launchd startup daemon", file=sys.stderr)
+    print("  version    - Displays the current proxy script version", file=sys.stderr)
+    sys.exit(1)
 
-cmd_install() {
-    ensure_dirs
-    setup_env
-    setup_venv
-    run_model_configuration
-    create_runner_script
-    install_service
-    status_service
-    post_setup_prompt
-}
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "install"
 
-cmd_models() {
-    ensure_dirs
-    run_model_configuration
-    local restart_needed=false
-    if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
-        restart_needed=true
-    else
-        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-            if launchctl list "${legacy_label}" >/dev/null 2>&1; then
-                restart_needed=true
-                break
-            fi
-        done
-    fi
+    if cmd == "install":
+        migrate_legacy_dirs()
+        setup_env()
+        run_model_configuration()
+        create_runner_script()
+        install_service()
+        status_service()
+        post_setup_prompt()
+    elif cmd == "models":
+        migrate_legacy_dirs()
+        run_model_configuration()
+        if platform.system() == "Darwin":
+            info("Restarting proxy to apply new YAML configuration...")
+            install_service()
+            success("Proxy restarted with updated configuration.")
+        status_service()
+        post_setup_prompt()
+    elif cmd == "status":
+        status_service()
+    elif cmd == "restart":
+        migrate_legacy_dirs()
+        create_runner_script()
+        install_service()
+        status_service()
+    elif cmd == "start":
+        subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
+        success(f"Started {PLIST_LABEL}")
+    elif cmd == "stop":
+        subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
+        for legacy in LEGACY_PLIST_LABELS:
+            legacy_path = os.path.expanduser(f"~/Library/LaunchAgents/{legacy}.plist")
+            subprocess.run(["launchctl", "unload", legacy_path], capture_output=True)
+        success("Stopped proxy daemon")
+    elif cmd == "uninstall":
+        uninstall_service()
+    elif cmd in ("version", "--version", "-v"):
+        print(f"Claude OpenRouter Models v{VERSION}")
+    else:
+        usage()
 
-    if [ "$restart_needed" = true ]; then
-        info "Restarting proxy to apply new YAML configuration..."
-        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-            launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
-            rm -f "${HOME}/Library/LaunchAgents/${legacy_label}.plist"
-        done
-        launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-        install_service
-        success "Proxy restarted with updated configuration."
-    fi
-    status_service
-    post_setup_prompt
-}
-
-cmd_restart() {
-    ensure_dirs
-    create_runner_script
-    install_service
-    status_service
-}
-
-cmd_start() {
-    launchctl load "${PLIST_PATH}"
-    success "Started ${PLIST_LABEL}"
-}
-
-cmd_stop() {
-    launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-        launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
-    done
-    success "Stopped proxy daemon"
-}
-
-# Command dispatch
-case "${1:-install}" in
-    install)
-        cmd_install
-        ;;
-    models)
-        cmd_models
-        ;;
-    uninstall)
-        uninstall_service
-        ;;
-    status)
-        status_service
-        ;;
-    start)
-        cmd_start
-        ;;
-    stop)
-        cmd_stop
-        ;;
-    restart)
-        cmd_restart
-        ;;
-    version|--version|-v)
-        echo "Claude OpenRouter Models v${VERSION}"
-        ;;
-    *)
-        usage
-        ;;
-esac
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\033[1;33m[ABORTED]\033[0m Cancelled by user.", file=sys.stderr)
+        sys.exit(130)
