@@ -54,6 +54,16 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models
 
 ---
 
+## Universal Providers & Local Inference (Ollama, LM Studio, vLLM)
+
+In addition to OpenRouter's cloud catalog, you can route Claude Desktop and Claude CLI to **local offline inference engines**:
+
+* **Ollama Auto-Discovery**: If Ollama is running (`http://localhost:11434`), `./setup.sh models` automatically detects your installed models (e.g., `qwen2.5-coder`, `deepseek-r1`) and makes them selectable with `$0.00 / Local` pricing.
+* **LM Studio & vLLM**: Connects to any local OpenAI-compatible endpoint on custom ports (`http://localhost:1234/v1` or `http://localhost:8000/v1`).
+* **Hybrid / Mix & Match**: Assign local models for unlimited free coding iterations (Sonnet / Haiku tiers) while routing heavyweight architectural queries to OpenRouter (Opus tier).
+
+---
+
 ## Gateway Mode Setup in Claude Desktop
 
 ### Automated Configuration (Recommended)

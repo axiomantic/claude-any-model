@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 """:"
 # ==============================================================================
-# 🐍💀 Bash/Python Polyglot Bootstrapper (Pymera + uv pattern)
+# 🐍 Bash/Python Polyglot Bootstrapper (Pymera + uv pattern)
 # Uses uv to ensure managed Python (3.12) & virtualenv exist with LiteLLM,
 # then seamlessly re-executes this file as a Python program.
 # ==============================================================================
@@ -74,7 +74,7 @@ exit 0
 """
 
 # ==============================================================================
-# 🚀 Claude OpenRouter Models — Python Implementation
+# Claude OpenRouter & Universal Models — Python Implementation
 # ==============================================================================
 import sys
 import os
@@ -90,7 +90,7 @@ import urllib.request
 from datetime import datetime
 
 # Script & Daemon Metadata
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-openrouter-models"
@@ -151,34 +151,29 @@ def migrate_legacy_dirs():
         os.makedirs(launch_agents, exist_ok=True)
 
     for legacy in LEGACY_APP_DIRS:
-        if os.path.exists(legacy) and not os.path.islink(legacy):
-            info(f"Migrating legacy directory from {legacy} to {APP_DIR}...")
-            # Copy all files
+        if os.path.exists(legacy) and legacy != APP_DIR:
+            info(f"Migrating legacy directory {legacy} -> {APP_DIR}...")
             for item in os.listdir(legacy):
                 src = os.path.join(legacy, item)
                 dst = os.path.join(APP_DIR, item)
                 if not os.path.exists(dst):
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst)
-                    else:
-                        shutil.copy2(src, dst)
-            shutil.rmtree(legacy)
-            try:
-                os.symlink(APP_DIR, legacy)
-                success(f"Moved {legacy} -> {APP_DIR} and created compatibility symlink.")
-            except Exception:
-                pass
-        elif not os.path.exists(legacy):
-            try:
-                os.symlink(APP_DIR, legacy)
-            except Exception:
-                pass
+                    try:
+                        shutil.move(src, dst)
+                    except Exception:
+                        pass
+            if not os.path.islink(legacy):
+                try:
+                    shutil.rmtree(legacy)
+                    os.symlink(APP_DIR, legacy)
+                    info(f"Created backward-compatible symlink: {legacy} -> {APP_DIR}")
+                except Exception:
+                    pass
 
     if platform.system() == "Darwin":
         for legacy_label in LEGACY_PLIST_LABELS:
-            legacy_plist = os.path.expanduser(f"~/Library/LaunchAgents/{legacy_label}.plist")
+            legacy_plist = os.path.join(launch_agents, f"{legacy_label}.plist")
             if os.path.exists(legacy_plist):
-                info(f"Unloading legacy launchd daemon ({legacy_label})...")
+                info(f"Unloading legacy launch agent {legacy_label}...")
                 subprocess.run(["launchctl", "unload", legacy_plist], capture_output=True)
                 try:
                     os.remove(legacy_plist)
@@ -187,75 +182,73 @@ def migrate_legacy_dirs():
 
 def is_claude_running():
     try:
-        res = subprocess.run(["pgrep", "-i", "Claude"], capture_output=True, text=True)
+        res = subprocess.run(["pgrep", "-f", "Claude.app"], capture_output=True)
         return res.returncode == 0
     except Exception:
         return False
 
 def check_claude_closed():
-    running = False
-    while is_claude_running():
-        running = True
-        print("", file=sys.stderr)
-        warn("Claude Desktop is currently RUNNING.")
-        print("\033[1;33m[ACTION REQUIRED]\033[0m Please quit Claude Desktop (Cmd+Q) to safely apply configuration.", file=sys.stderr)
-        safe_input("Press [Enter] once Claude Desktop has exited (or Ctrl+C to abort)...", "")
-
-    if running:
-        success("Claude Desktop is closed. Proceeding...")
+    if is_claude_running():
+        warn("Claude Desktop is currently running.")
+        print("Please quit Claude Desktop (\033[1;36mCmd+Q\033[0m) so updated model profiles load cleanly.", file=sys.stderr)
+        safe_input("Press [Enter] once Claude Desktop is closed... ")
+        while is_claude_running():
+            warn("Claude Desktop is still running. Please quit Claude Desktop completely.")
+            safe_input("Press [Enter] once Claude Desktop is closed... ")
+        success("Claude Desktop is closed.")
 
 def validate_openrouter_key(api_key):
-    info("Validating OpenRouter API key...")
+    if not api_key or not api_key.startswith("sk-or-v1-"):
+        return False, "Key must start with 'sk-or-v1-'"
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/auth/key",
-        headers={"Authorization": f"Bearer {api_key}", "User-Agent": "Claude-OpenRouter-Models/1.2.0"}
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Claude-OpenRouter-Models/1.3.0"
+        }
     )
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status == 200:
-                success("OpenRouter API key verified successfully.")
-                return True
+                return True, "Key is valid and authenticated"
+    except urllib.error.HTTPError as e:
+        return False, f"HTTP Error {e.code}: {e.reason}"
     except Exception as e:
-        warn(f"Could not verify OpenRouter key ({e}). Proceeding anyway in case of offline/firewall restrictions.")
-    return True
+        return False, f"Connection error: {e}"
+    return False, "Validation failed"
 
 def find_existing_api_key():
-    # 1. Check current .env
-    env_path = os.path.join(APP_DIR, ".env")
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("OPENROUTER_API_KEY="):
-                        val = line.split("=", 1)[1].strip()
-                        if len(val) > 5:
-                            return val
-        except Exception:
-            pass
+    env_key = os.environ.get("OPENROUTER_API_KEY")
+    if env_key and len(env_key.strip()) > 5:
+        return env_key.strip()
 
-    # 2. Check legacy app dirs
-    for leg in LEGACY_APP_DIRS:
-        leg_env = os.path.join(leg, ".env")
-        if os.path.exists(leg_env):
+    search_files = [
+        os.path.join(APP_DIR, ".env"),
+        os.path.expanduser("~/.claude-to-openrouter-proxy/.env"),
+        os.path.expanduser("~/.litellm-proxy/.env"),
+        os.path.expanduser("~/.zshrc"),
+        os.path.expanduser("~/.bashrc"),
+        os.path.expanduser("~/.config/fish/config.fish"),
+    ]
+    for sf in search_files:
+        if os.path.exists(sf):
             try:
-                with open(leg_env, "r", encoding="utf-8") as f:
+                with open(sf, "r", encoding="utf-8") as f:
                     for line in f:
-                        if line.startswith("OPENROUTER_API_KEY="):
-                            val = line.split("=", 1)[1].strip()
-                            if len(val) > 5:
+                        if line.strip().startswith("OPENROUTER_API_KEY="):
+                            val = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                            if val and len(val) > 5 and not val.startswith("your_"):
+                                return val
+                        elif "export OPENROUTER_API_KEY=" in line:
+                            val = line.strip().split("export OPENROUTER_API_KEY=", 1)[1].strip().strip('"').strip("'")
+                            if val and len(val) > 5 and not val.startswith("your_"):
                                 return val
             except Exception:
                 pass
-
-    # 3. Check process environment
-    env_var = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if len(env_var) > 5:
-        return env_var
-
-    return ""
+    return None
 
 def mask_key(key):
-    if len(key) <= 8:
+    if not key or len(key) <= 12:
         return "****"
     return f"{key[:8]}...{key[-4:]}"
 
@@ -264,67 +257,49 @@ def setup_env(force=False):
     existing_key = find_existing_api_key()
 
     if existing_key and not force:
-        # Key already exists and not forcing confirmation prompt
-        if not os.path.exists(env_path):
-            with open(env_path, "w", encoding="utf-8") as f:
-                f.write(f"OPENROUTER_API_KEY={existing_key}\nPORT={PORT}\n")
-            os.chmod(env_path, 0o600)
-        return
-
-    if existing_key:
-        info(f"Existing OpenRouter API key found: {mask_key(existing_key)}")
-        keep_choice = safe_input("Keep existing OpenRouter API key? (Y/n): ", "y")
-        if keep_choice.lower() == "y":
-            # Ensure persisted to .env if not already there
-            if not os.path.exists(env_path):
-                with open(env_path, "w", encoding="utf-8") as f:
-                    f.write(f"OPENROUTER_API_KEY={existing_key}\nPORT={PORT}\n")
-                os.chmod(env_path, 0o600)
-                success(f"Preserved API key to {env_path}")
-            return
-
-        
-        # User explicitly wants to change key
-        print("\nEntering new OpenRouter API key (press Enter to cancel and keep current key):", file=sys.stderr)
-        try:
-            if sys.stdin.isatty():
-                new_key = getpass.getpass("New OpenRouter API Key (sk-or-v1-...): ")
-            else:
-                new_key = safe_input("New OpenRouter API Key (sk-or-v1-...): ", "")
-        except Exception:
-            new_key = safe_input("New OpenRouter API Key (sk-or-v1-...): ", "")
-
-        new_key = new_key.strip()
-        if not new_key:
-            info("No new key entered. Keeping existing API key.")
-            return
-
-        api_key = new_key
+        masked = mask_key(existing_key)
+        info(f"Found existing OpenRouter API Key: \033[1;32m{masked}\033[0m")
+        use_existing = safe_input("Use this API key? (Y/n): ", "y").lower()
+        if use_existing in ("y", "yes", ""):
+            api_key = existing_key
+        else:
+            api_key = None
     else:
-        # No existing key found anywhere
-        warn("No OpenRouter API key found.")
-        print("\033[1;36m[SETUP]\033[0m An OpenRouter API key is required for Claude Desktop Gateway mode.", file=sys.stderr)
-        print("", file=sys.stderr)
-        try:
+        api_key = None
+
+    if not api_key:
+        while True:
+            prompt = "\nEnter your OpenRouter API Key (sk-or-v1-...): "
             if sys.stdin.isatty():
-                api_key = getpass.getpass("Enter your OpenRouter API Key (sk-or-v1-...): ")
+                try:
+                    entered = getpass.getpass(prompt).strip()
+                except Exception:
+                    entered = safe_input(prompt, "")
             else:
-                api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
-        except Exception:
-            api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
+                entered = safe_input(prompt, "")
 
-        api_key = api_key.strip()
-        if not api_key:
-            error("API key cannot be empty.")
-            sys.exit(1)
+            if not entered:
+                warn("API key cannot be empty. Get one at: https://openrouter.ai/keys")
+                continue
 
-    validate_openrouter_key(api_key)
+            info("Validating key with OpenRouter API...")
+            valid, msg = validate_openrouter_key(entered)
+            if valid:
+                success(f"OpenRouter API key verified successfully ({msg})")
+                api_key = entered
+                break
+            else:
+                error(f"API key validation failed: {msg}")
+                retry = safe_input("Do you want to use this key anyway? (y/N): ", "n").lower()
+                if retry in ("y", "yes"):
+                    api_key = entered
+                    break
 
-    # Backup existing .env if present
     if os.path.exists(env_path):
-        bak_path = f"{env_path}.bak.{int(datetime.now().timestamp())}"
+        backup_env = f"{env_path}.bak.{int(datetime.now().timestamp())}"
         try:
-            shutil.copy2(env_path, bak_path)
+            with open(env_path, "r", encoding="utf-8") as src, open(backup_env, "w", encoding="utf-8") as dst:
+                dst.write(src.read())
         except Exception:
             pass
 
@@ -345,18 +320,116 @@ def read_current_config():
             for b in blocks[1:]:
                 lines = b.strip().split("\n")
                 m_name = lines[0].strip()
-                m_target_match = re.search(r"model:\s*openrouter/([^\s]+)", b)
+                m_target_match = re.search(r"model:\s*([^\s]+)", b)
                 if m_target_match:
-                    current_map[m_name] = m_target_match.group(1).strip()
+                    raw_target = m_target_match.group(1).strip()
+                    if raw_target.startswith("openrouter/"):
+                        current_map[m_name] = raw_target[len("openrouter/"):]
+                    elif raw_target.startswith("ollama/"):
+                        current_map[m_name] = raw_target
+                    elif raw_target.startswith("openai/"):
+                        current_map[m_name] = raw_target
+                    else:
+                        current_map[m_name] = raw_target
         except Exception:
             pass
     return current_map
+
+def fetch_local_engines():
+    """Detect running local inference engines (Ollama, LM Studio, vLLM)."""
+    engines = []
+
+    # 1. Ollama (Default: http://localhost:11434)
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "Claude-Models-Checker"})
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            data = json.loads(resp.read().decode())
+            models = data.get("models", [])
+            if models:
+                engines.append({
+                    "provider": "ollama",
+                    "name": "Ollama",
+                    "api_base": "http://localhost:11434",
+                    "models": [
+                        {
+                            "id": f"ollama/{m.get('name')}",
+                            "raw_model_id": m.get("name"),
+                            "name": f"{m.get('name')} (Ollama Local)",
+                            "price_str": "$0.00 / Local",
+                            "ctx_str": "Local Context",
+                            "supports1m": False,
+                            "provider": "ollama",
+                            "api_base": "http://localhost:11434"
+                        }
+                        for m in models
+                    ]
+                })
+    except Exception:
+        pass
+
+    # 2. LM Studio (Default: http://localhost:1234/v1)
+    try:
+        req = urllib.request.Request("http://localhost:1234/v1/models", headers={"User-Agent": "Claude-Models-Checker"})
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            data = json.loads(resp.read().decode())
+            models = data.get("data", [])
+            if models:
+                engines.append({
+                    "provider": "lmstudio",
+                    "name": "LM Studio",
+                    "api_base": "http://localhost:1234/v1",
+                    "models": [
+                        {
+                            "id": f"openai/{m.get('id')}",
+                            "raw_model_id": m.get("id"),
+                            "name": f"{m.get('id')} (LM Studio Local)",
+                            "price_str": "$0.00 / Local",
+                            "ctx_str": "Local Context",
+                            "supports1m": False,
+                            "provider": "openai",
+                            "api_base": "http://localhost:1234/v1"
+                        }
+                        for m in models
+                    ]
+                })
+    except Exception:
+        pass
+
+    # 3. vLLM / llama.cpp / custom local server (Default: http://localhost:8000/v1)
+    try:
+        req = urllib.request.Request("http://localhost:8000/v1/models", headers={"User-Agent": "Claude-Models-Checker"})
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            data = json.loads(resp.read().decode())
+            models = data.get("data", [])
+            if models:
+                engines.append({
+                    "provider": "vllm",
+                    "name": "vLLM / Local Server",
+                    "api_base": "http://localhost:8000/v1",
+                    "models": [
+                        {
+                            "id": f"openai/{m.get('id')}",
+                            "raw_model_id": m.get("id"),
+                            "name": f"{m.get('id')} (vLLM Local)",
+                            "price_str": "$0.00 / Local",
+                            "ctx_str": "Local Context",
+                            "supports1m": False,
+                            "provider": "openai",
+                            "api_base": "http://localhost:8000/v1"
+                        }
+                        for m in models
+                    ]
+                })
+    except Exception:
+        pass
+
+    return engines
 
 def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-OpenRouter-Models/1.2.0"}
+        headers={"User-Agent": "Claude-OpenRouter-Models/1.3.0"}
     )
     catalog = {}
     try:
@@ -391,18 +464,24 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
     if item:
         return {
             "id": model_id,
+            "raw_model_id": model_id,
             "name": fallback_name,
             "price_str": item["price_str"],
             "ctx_str": item["ctx_str"],
             "supports1m": item["supports1m"],
+            "provider": "openrouter",
+            "api_base": None,
             "is_recommended": is_recommended
         }
     return {
         "id": model_id,
+        "raw_model_id": model_id,
         "name": fallback_name,
         "price_str": fallback_price,
         "ctx_str": fallback_ctx,
         "supports1m": fallback_1m,
+        "provider": "openrouter",
+        "api_base": None,
         "is_recommended": is_recommended
     }
 
@@ -411,6 +490,11 @@ def run_model_configuration():
     setup_env(force=False)
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config()
+    local_engines = fetch_local_engines()
+
+    if local_engines:
+        engine_summary = ", ".join([f"{e['name']} ({len(e['models'])} models)" for e in local_engines])
+        info(f"Discovered local inference engine(s): \033[1;32m{engine_summary}\033[0m")
 
     tiers = [
         {
@@ -474,7 +558,7 @@ def run_model_configuration():
     header(f"Configure Inference Models for Claude Desktop (Curated: {MODELS_LAST_REVISITED})")
     print(f"\033[1;34m[INFO]\033[0m Curated model list last revisited: \033[1;36m{MODELS_LAST_REVISITED}\033[0m", file=sys.stderr)
     print("Select your target model for each Anthropic family tier.", file=sys.stderr)
-    print("Pricing displayed as ($In / $Out per 1M tokens) fetched from OpenRouter.\n", file=sys.stderr)
+    print("Supports OpenRouter cloud models as well as local engines (Ollama, LM Studio, vLLM).\n", file=sys.stderr)
 
     selections = []
 
@@ -485,8 +569,15 @@ def run_model_configuration():
         matched_current_idx = None
         recommended_idx = 1
 
-        for opt_idx, opt in enumerate(t["options"], 1):
-            is_current = (current_model_id is not None and opt["id"] == current_model_id)
+        all_options = list(t["options"])
+
+        # Inject discovered local engine models into options
+        for engine in local_engines:
+            for lm in engine["models"]:
+                all_options.append(lm)
+
+        for opt_idx, opt in enumerate(all_options, 1):
+            is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
             if is_current:
                 matched_current_idx = opt_idx
             if opt.get("is_recommended"):
@@ -497,21 +588,25 @@ def run_model_configuration():
                 tags.append("\033[1;32m(Recommended)\033[0m")
             if is_current:
                 tags.append("\033[1;33m[CURRENT]\033[0m")
+            if opt.get("provider") in ("ollama", "lmstudio", "vllm"):
+                tags.append(f"\033[1;36m[{opt['provider'].capitalize()} / Local]\033[0m")
 
             tag_str = f" {' '.join(tags)}" if tags else ""
             print(f"{opt_idx}) {opt['name']:<24} - {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
-        custom_num = len(t["options"]) + 1
+        custom_openrouter_num = len(all_options) + 1
+        custom_local_num = len(all_options) + 2
         custom_tag = ""
         if matched_current_idx is None and current_model_id:
             custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
-            matched_current_idx = custom_num
+            matched_current_idx = custom_openrouter_num
 
-        print(f"{custom_num}) Custom OpenRouter Model ID{custom_tag}", file=sys.stderr)
+        print(f"{custom_openrouter_num}) Custom OpenRouter Model ID{custom_tag}", file=sys.stderr)
+        print(f"{custom_local_num}) Custom Local / OpenAI-Compatible Endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
 
         if matched_current_idx is not None:
             default_choice = str(matched_current_idx)
-            if matched_current_idx == custom_num:
+            if matched_current_idx == custom_openrouter_num:
                 default_hint = f"default={default_choice} (Current: {current_model_id})"
             else:
                 default_hint = f"default={default_choice} (Current)"
@@ -519,19 +614,21 @@ def run_model_configuration():
             default_choice = str(recommended_idx)
             default_hint = f"default={default_choice} (Recommended)"
 
-        user_choice = safe_input(f"Select {t['tier_name'].upper()} model [1-{custom_num}, {default_hint}]: ", default_choice)
+        user_choice = safe_input(f"Select {t['tier_name'].upper()} model [1-{custom_local_num}, {default_hint}]: ", default_choice)
 
         try:
             choice_num = int(user_choice)
         except ValueError:
             choice_num = int(default_choice)
 
-        if 1 <= choice_num <= len(t["options"]):
-            chosen = t["options"][choice_num - 1]
-            model_id = chosen["id"]
+        if 1 <= choice_num <= len(all_options):
+            chosen = all_options[choice_num - 1]
+            provider = chosen.get("provider", "openrouter")
+            model_id = chosen["raw_model_id"]
+            api_base = chosen.get("api_base")
             label = f"{chosen['name']} ({chosen['price_str']})"
             supports1m = chosen["supports1m"]
-        else:
+        elif choice_num == custom_openrouter_num:
             default_custom = current_model_id if current_model_id else t["options"][0]["id"]
             custom_id = safe_input(f"Enter OpenRouter model ID [default={default_custom}]: ", default_custom)
             item = catalog.get(custom_id)
@@ -546,12 +643,30 @@ def run_model_configuration():
                 model_id = custom_id
                 label = custom_label
                 supports1m = custom_1m
+            provider = "openrouter"
+            api_base = None
+        else:
+            # Custom local / OpenAI-compatible endpoint
+            print("\033[1;36m--- Custom Local / Remote Endpoint Configuration ---\033[0m", file=sys.stderr)
+            endpoint_type = safe_input("Select engine type: [1] Ollama, [2] LM Studio / vLLM / OpenAI-compatible (default=1): ", "1")
+            if endpoint_type == "2":
+                provider = "openai"
+                default_base = "http://localhost:1234/v1"
+            else:
+                provider = "ollama"
+                default_base = "http://localhost:11434"
 
+            api_base = safe_input(f"Enter API Base URL [default={default_base}]: ", default_base)
+            model_id = safe_input(f"Enter Model Name (e.g. qwen2.5-coder:32b): ", "local-model")
+            label = safe_input(f"Enter display label in Claude [default={model_id} (Local / $0.00)]: ", f"{model_id} (Local / $0.00)")
+            supports1m = safe_input("Does it support 1M context? (y/N): ", "n").lower() == "y"
 
         selections.append({
             "tier": t["tier_name"],
             "claude_name": t["claude_name"],
+            "provider": provider,
             "model_id": model_id,
+            "api_base": api_base,
             "label": label,
             "supports1m": supports1m
         })
@@ -597,8 +712,24 @@ strict_guardrail = StrictModelGuardrail()
         yaml_lines.append(f"  # Route {s['tier'].capitalize()} requests ({s['label']})")
         yaml_lines.append(f"  - model_name: {s['claude_name']}")
         yaml_lines.append(f"    litellm_params:")
-        yaml_lines.append(f"      model: openrouter/{s['model_id']}")
-        yaml_lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY\n")
+        if s["provider"] == "openrouter":
+            yaml_lines.append(f"      model: openrouter/{s['model_id']}")
+            yaml_lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY\n")
+        elif s["provider"] == "ollama":
+            raw_id = s['model_id'][len("ollama/"):] if s['model_id'].startswith("ollama/") else s['model_id']
+            yaml_lines.append(f"      model: ollama/{raw_id}")
+            yaml_lines.append(f"      api_base: {s['api_base'] or 'http://localhost:11434'}\n")
+        elif s["provider"] in ("openai", "lmstudio", "vllm"):
+            raw_id = s['model_id'][len("openai/"):] if s['model_id'].startswith("openai/") else s['model_id']
+            yaml_lines.append(f"      model: openai/{raw_id}")
+            yaml_lines.append(f"      api_base: {s['api_base'] or 'http://localhost:1234/v1'}")
+            yaml_lines.append(f"      api_key: dummy-key\n")
+        else:
+            yaml_lines.append(f"      model: {s['model_id']}")
+            if s.get("api_base"):
+                yaml_lines.append(f"      api_base: {s['api_base']}")
+            yaml_lines.append(f"      api_key: dummy-key\n")
+
     yaml_lines.append("litellm_settings:")
     yaml_lines.append("  drop_params: true")
     yaml_lines.append("  callbacks:")
@@ -672,38 +803,42 @@ strict_guardrail = StrictModelGuardrail()
 def create_runner_script():
     runner = os.path.join(APP_DIR, "run_proxy.sh")
     content = f"""#!/usr/bin/env bash
-DIR="{APP_DIR}"
-export PYTHONPATH="$DIR:${{PYTHONPATH:-}}"
-if [ -f "$DIR/.env" ]; then
+set -euo pipefail
+APP_DIR="{APP_DIR}"
+cd "$APP_DIR"
+
+if [ -f "$APP_DIR/.env" ]; then
     set -a
-    source "$DIR/.env"
+    source "$APP_DIR/.env"
     set +a
 fi
-exec "$DIR/venv/bin/litellm" --config "$DIR/config.yaml" --port "${{PORT:-{PORT}}}" --host 127.0.0.1
+
+export PYTHONPATH="$APP_DIR"
+exec "{APP_DIR}/venv/bin/litellm" --config "$APP_DIR/config.yaml" --port {PORT} --host 127.0.0.1
 """
     with open(runner, "w", encoding="utf-8") as f:
         f.write(content)
     os.chmod(runner, 0o755)
-
+    success(f"Runner script created at: {runner}")
 
 def install_service():
     if platform.system() != "Darwin":
-        info("Background service auto-start is only configured for macOS launchd.")
+        info("Non-macOS system: Launch proxy manually using ~/.claude-openrouter-models/run_proxy.sh")
         return
 
-    info(f"Creating macOS launchd service plist at {PLIST_PATH}...")
+    launch_agents = os.path.expanduser("~/Library/LaunchAgents")
+    os.makedirs(launch_agents, exist_ok=True)
+    runner = os.path.join(APP_DIR, "run_proxy.sh")
+
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>{PLIST_LABEL}</string>
-    <key>Version</key>
-    <string>{VERSION}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>{APP_DIR}/run_proxy.sh</string>
+        <string>{runner}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -721,41 +856,44 @@ def install_service():
     with open(PLIST_PATH, "w", encoding="utf-8") as f:
         f.write(plist_content)
 
-    info("Loading service into launchd...")
     subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
     subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
-
-    success(f"Service installed and started as background daemon ({PLIST_LABEL} v{VERSION}).")
-    print(f"Logs are available at: {APP_DIR}/logs/", file=sys.stderr)
+    success(f"LaunchAgent registered and loaded: {PLIST_PATH}")
 
 def uninstall_service():
-    info("Stopping and removing launchd service...")
-    if os.path.exists(PLIST_PATH):
+    check_claude_closed()
+    header("Uninstalling Claude OpenRouter Models")
+    if platform.system() == "Darwin" and os.path.exists(PLIST_PATH):
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
         try:
             os.remove(PLIST_PATH)
         except Exception:
             pass
-        success(f"Removed launchd plist: {PLIST_PATH}")
+        success(f"Unloaded and removed {PLIST_PATH}")
 
-    for legacy in LEGACY_PLIST_LABELS:
-        legacy_path = os.path.expanduser(f"~/Library/LaunchAgents/{legacy}.plist")
-        if os.path.exists(legacy_path):
-            subprocess.run(["launchctl", "unload", legacy_path], capture_output=True)
-            try:
-                os.remove(legacy_path)
-            except Exception:
-                pass
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            meta["appliedId"] = None
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+            success("Cleared appliedId in Claude 3P config.")
+        except Exception:
+            pass
 
-    clean_all = safe_input(f"Do you also want to remove all configuration, logs, and venv in {APP_DIR}? (y/N): ", "n")
-    if clean_all.lower() == "y":
-        shutil.rmtree(APP_DIR, ignore_errors=True)
+    purge = safe_input("Delete proxy directory and cached virtualenv ~/.claude-openrouter-models? (y/N): ", "n").lower()
+    if purge in ("y", "yes"):
+        if os.path.exists(APP_DIR):
+            shutil.rmtree(APP_DIR)
         for legacy in LEGACY_APP_DIRS:
             if os.path.islink(legacy):
-                try:
-                    os.unlink(legacy)
-                except Exception:
-                    pass
+                try: os.remove(legacy)
+                except Exception: pass
+            elif os.path.exists(legacy):
+                try: shutil.rmtree(legacy)
+                except Exception: pass
         success(f"Removed {APP_DIR} and legacy links.")
     success("Uninstall complete.")
 
@@ -822,7 +960,7 @@ def switch_claude_mode(target_mode="toggle"):
         post_setup_prompt()
 
     elif target_mode == "gateway":
-        info("Switching Claude Desktop to GATEWAY MODE (OpenRouter Proxy)...")
+        info("Switching Claude Desktop to GATEWAY MODE (OpenRouter & Local Inference Proxy)...")
         if platform.system() == "Darwin":
             install_service()
 
@@ -861,7 +999,7 @@ def switch_claude_mode(target_mode="toggle"):
                 warn(f"Could not update _meta.json: {e}")
 
         success(f"Switched Claude Desktop to GATEWAY MODE (Profile ID: {profile_id}).")
-        print(f"\033[1;32m[STATUS]\033[0m Claude Desktop is now routed through LiteLLM -> OpenRouter on http://127.0.0.1:{PORT}\n", file=sys.stderr)
+        print(f"\033[1;32m[STATUS]\033[0m Claude Desktop is now routed through LiteLLM on http://127.0.0.1:{PORT}\n", file=sys.stderr)
         post_setup_prompt()
 
 def status_service():
@@ -871,11 +1009,11 @@ def status_service():
     # Active mode
     current_mode = get_active_claude_mode()
     if current_mode == "gateway":
-        print(f"\033[1;34m[MODE]\033[0m Active Claude Desktop Mode: \033[1;32mGATEWAY MODE (OpenRouter Proxy)\033[0m", file=sys.stderr)
+        print(f"\033[1;34m[MODE]\033[0m Active Claude Desktop Mode: \033[1;32mGATEWAY MODE (OpenRouter & Local Inference Proxy)\033[0m", file=sys.stderr)
         print("       (Tip: Run \033[1;36m./setup.sh switch regular\033[0m to switch to native Claude Pro/Team)", file=sys.stderr)
     else:
         print(f"\033[1;34m[MODE]\033[0m Active Claude Desktop Mode: \033[1;33mREGULAR MODE (Official Anthropic Account)\033[0m", file=sys.stderr)
-        print("       (Tip: Run \033[1;36m./setup.sh switch gateway\033[0m to activate OpenRouter Gateway mode)", file=sys.stderr)
+        print("       (Tip: Run \033[1;36m./setup.sh switch gateway\033[0m to activate Gateway mode)", file=sys.stderr)
 
     print("", file=sys.stderr)
     if platform.system() == "Darwin":
@@ -884,6 +1022,12 @@ def status_service():
             success(f"Daemon {PLIST_LABEL} (v{VERSION}) is RUNNING.")
         else:
             warn(f"Daemon {PLIST_LABEL} is NOT running.")
+
+    # Check local engines
+    local_engines = fetch_local_engines()
+    if local_engines:
+        for le in local_engines:
+            success(f"Local Engine: {le['name']} at {le['api_base']} is ONLINE ({len(le['models'])} model(s) available)")
 
     # Check .env credentials
     env_path = os.path.join(APP_DIR, ".env")
@@ -901,9 +1045,7 @@ def status_service():
     if has_api_key:
         success(f"OpenRouter API key is configured in {env_path}")
     else:
-        error(f"No OpenRouter API key configured in {env_path}!")
-        print("\033[1;31m[CRITICAL]\033[0m Claude Desktop will fail with 401 'No cookie auth credentials found' until an API key is saved.", file=sys.stderr)
-        print("Run \033[1;36m./setup.sh install\033[0m to enter and save your OpenRouter API key.", file=sys.stderr)
+        warn(f"No OpenRouter API key found in {env_path} (Only local models will work without an API key).")
 
     print("", file=sys.stderr)
     info(f"Testing endpoint connectivity on port {PORT}...")
@@ -937,10 +1079,10 @@ def status_service():
 
 def post_setup_prompt():
     print("", file=sys.stderr)
-    if platform.system() == "Darwin":
-        choice = safe_input("Would you like to launch Claude Desktop now? (Y/n): ", "y")
-        if choice.lower() == "y":
-            subprocess.run(["open", "-a", "Claude"], capture_output=True)
+    if not is_claude_running():
+        ans = safe_input("Would you like to open Claude Desktop now? (Y/n): ", "y").lower()
+        if ans in ("y", "yes", ""):
+            subprocess.run(["open", "-a", "Claude"], check=False)
             success("Claude Desktop launched.")
 
 def usage():
@@ -966,7 +1108,7 @@ def main():
         switch_claude_mode(target)
     elif cmd == "install":
         migrate_legacy_dirs()
-        setup_env(force=True)
+        setup_env()
         run_model_configuration()
         create_runner_script()
         install_service()
