@@ -4,6 +4,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-purple.svg)](https://openrouter.ai)
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
+[![Release](https://img.shields.io/github/v/release/axiomantic/claude-openrouter-models?include_prereleases&color=green)](https://github.com/axiomantic/claude-openrouter-models/releases)
 
 Route Claude Desktop Third-Party Inference requests to models on OpenRouter (such as Kimi K3, Qwen3-Coder, DeepSeek V4 Flash, GLM-5.2) with live token pricing shown directly in Claude's model picker.
 
