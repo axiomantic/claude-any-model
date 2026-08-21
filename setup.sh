@@ -863,7 +863,15 @@ if [ -f "$APP_DIR/.env" ]; then
 fi
 
 export PYTHONPATH="$APP_DIR"
-exec "{APP_DIR}/venv/bin/litellm" --config "$APP_DIR/config.yaml" --port {PORT} --host 127.0.0.1
+
+# Use uv run to avoid stale shebang issues when venv was built elsewhere.
+# Falls back to activating the venv directly if uv is not on PATH.
+if command -v uv &>/dev/null; then
+    exec uv run --project "$APP_DIR" litellm --config "$APP_DIR/config.yaml" --port {PORT} --host 127.0.0.1
+else
+    source "$APP_DIR/venv/bin/activate"
+    exec litellm --config "$APP_DIR/config.yaml" --port {PORT} --host 127.0.0.1
+fi
 """
     with open(runner, "w", encoding="utf-8") as f:
         f.write(content)
