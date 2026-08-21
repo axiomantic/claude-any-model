@@ -12,13 +12,14 @@ Route Claude Desktop and Claude CLI requests to hundreds of models on OpenRouter
 
 ## What is This?
 
-Many people don't know that Anthropic built a **Third-Party Inference** mode into Claude Desktop. This built-in feature allows Claude Desktop to connect to any custom API gateway instead of being locked to Anthropic's cloud servers.
+Anthropic includes a **Third-Party Inference** mode in Claude Desktop designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
 
-`claude-openrouter-models` makes using this feature effortless:
+`claude-openrouter-models` breaks this lock-in:
 
-* **Cut Costs by 80–95%**: Use top-tier coding and reasoning models (like Qwen3-Coder at $0.12/1M input tokens vs. Claude 3.5 Sonnet at $3.00/1M).
-* **Live Pricing in the UI**: Shows real-time OpenRouter token prices directly in Claude Desktop's model picker dropdown (e.g., `Qwen3 Coder ($0.12/$0.80) [262k]`).
-* **Keep the Claude UI**: You get the full official Claude Desktop experience (chat, artifacts, projects, code sessions) powered by OpenRouter's model catalog.
+* **Use Any Model in Claude Desktop**: Seamlessly maps Claude's model picker to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, GLM-5.2, Llama 3.3, and Mistral).
+* **Cut Inference Costs by 80–95%**: Run state-of-the-art coding and reasoning models at pennies per million tokens (e.g., Qwen3-Coder at $0.12/1M input vs. Claude 3.5 Sonnet at $3.00/1M).
+* **Live Pricing in the Model Picker**: Displays real-time OpenRouter token pricing and context window limits directly in Claude Desktop's dropdown UI (e.g., `Qwen3 Coder ($0.12/$0.80) [262k]`).
+* **Keep Native Claude Features**: Full support for chat history, markdown artifacts, project folders, code execution sessions, and file attachments.
 * **Works with Claude CLI**: Route terminal `claude` CLI coding sessions through the same local proxy.
 
 ### How It Works
