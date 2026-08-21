@@ -744,23 +744,32 @@ strict_guardrail = StrictModelGuardrail()
     # 2. Write Claude 3P configLibrary JSON
     os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
-    applied_id = None
+    meta = {"appliedId": None, "entries": []}
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-                applied_id = meta.get("appliedId")
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    meta = loaded
         except Exception:
             pass
 
-    if not applied_id:
+    entries = meta.get("entries", [])
+    applied_id = meta.get("appliedId")
+
+    # Find existing OpenRouter gateway entry or create a dedicated entry without overwriting others
+    gateway_entry = next((e for e in entries if e.get("name") in ("OpenRouter Gateway", "Default") or (applied_id and e.get("id") == applied_id)), None)
+    if gateway_entry:
+        applied_id = gateway_entry.get("id")
+        gateway_entry["name"] = "OpenRouter Gateway"
+    else:
         applied_id = str(uuid.uuid4())
-        meta = {
-            "appliedId": applied_id,
-            "entries": [{"id": applied_id, "name": "Default"}]
-        }
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
+        entries.append({"id": applied_id, "name": "OpenRouter Gateway"})
+
+    meta["appliedId"] = applied_id
+    meta["entries"] = entries
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
 
     profile_path = os.path.join(CLAUDE_3P_DIR, f"{applied_id}.json")
     if os.path.exists(profile_path):
@@ -798,6 +807,17 @@ strict_guardrail = StrictModelGuardrail()
 
     with open(profile_path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2)
+    
+    # Save a persistent backup copy in ~/.claude-openrouter-models
+    backup_copy = os.path.join(APP_DIR, "gateway_profile.json")
+    try:
+        with open(backup_copy, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=2)
+        with open(os.path.join(APP_DIR, ".last_applied_id"), "w", encoding="utf-8") as f:
+            f.write(applied_id.strip())
+    except Exception:
+        pass
+
     success(f"Synchronized Claude 3P config profile at: {profile_path}")
 
 def create_runner_script():
@@ -949,14 +969,27 @@ def switch_claude_mode(target_mode="toggle"):
                 if old_id:
                     with open(state_file, "w", encoding="utf-8") as sf:
                         sf.write(old_id.strip())
+                # Preserve all other profile entries in _meta.json!
                 meta["appliedId"] = None
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
             except Exception as e:
                 warn(f"Could not update _meta.json: {e}")
 
+        # Keep standalone persistent backup in ~/.claude-openrouter-models
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, "r", encoding="utf-8") as sf:
+                    cached_id = sf.read().strip()
+                cached_profile_path = os.path.join(CLAUDE_3P_DIR, f"{cached_id}.json")
+                if os.path.exists(cached_profile_path):
+                    shutil.copy2(cached_profile_path, os.path.join(APP_DIR, "gateway_profile.json"))
+            except Exception:
+                pass
+
         success("Switched Claude Desktop to REGULAR (Official Anthropic) Mode.")
-        print("\033[1;32m[STATUS]\033[0m Claude Desktop will now use your native Anthropic account directly.\n", file=sys.stderr)
+        print("\033[1;32m[STATUS]\033[0m Claude Desktop will now use your native Anthropic account directly.")
+        print("\033[1;36m[PRESERVED]\033[0m All OpenRouter API keys, model mappings, and third-party profiles remain safely stored.\n", file=sys.stderr)
         post_setup_prompt()
 
     elif target_mode == "gateway":
@@ -978,13 +1011,25 @@ def switch_claude_mode(target_mode="toggle"):
                     with open(meta_path, "r", encoding="utf-8") as f:
                         meta = json.load(f)
                     entries = meta.get("entries", [])
-                    if entries:
-                        profile_id = entries[0].get("id")
+                    target_entry = next((e for e in entries if e.get("name") in ("OpenRouter Gateway", "Default")), entries[0] if entries else None)
+                    if target_entry:
+                        profile_id = target_entry.get("id")
                 except Exception:
                     pass
 
-        if not profile_id:
-            info("No existing profile found. Configuring gateway profile...")
+        # Self-heal restore from ~/.claude-openrouter-models/gateway_profile.json if profile JSON was removed
+        backup_profile_path = os.path.join(APP_DIR, "gateway_profile.json")
+        if profile_id:
+            target_profile_path = os.path.join(CLAUDE_3P_DIR, f"{profile_id}.json")
+            if not os.path.exists(target_profile_path) and os.path.exists(backup_profile_path):
+                try:
+                    shutil.copy2(backup_profile_path, target_profile_path)
+                    info(f"Self-healed gateway profile {profile_id}.json from persistent backup.")
+                except Exception:
+                    pass
+
+        if not profile_id or not os.path.exists(os.path.join(CLAUDE_3P_DIR, f"{profile_id}.json")):
+            info("No existing profile found. Recreating gateway profile...")
             run_model_configuration()
             return
 
@@ -993,6 +1038,10 @@ def switch_claude_mode(target_mode="toggle"):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                 meta["appliedId"] = profile_id
+                entries = meta.get("entries", [])
+                if not any(e.get("id") == profile_id for e in entries):
+                    entries.append({"id": profile_id, "name": "OpenRouter Gateway"})
+                meta["entries"] = entries
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
             except Exception as e:
