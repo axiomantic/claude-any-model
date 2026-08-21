@@ -220,7 +220,7 @@ def setup_env(force=False):
     env_path = os.path.join(APP_DIR, ".env")
     existing_key = find_existing_api_key()
 
-    # If key is already available and not forcing confirmation, silently proceed
+    # If key is already available and not forcing, silently ensure .env exists and return
     if existing_key and not force:
         if not os.path.exists(env_path):
             with open(env_path, "w", encoding="utf-8") as f:
@@ -236,34 +236,31 @@ def setup_env(force=False):
         if use_existing in ("y", "yes", ""):
             api_key = existing_key
 
-
     if not api_key:
-        while True:
-            prompt = "\nEnter your OpenRouter API Key (sk-or-v1-...): "
-            if sys.stdin.isatty():
-                try:
-                    entered = getpass.getpass(prompt).strip()
-                except Exception:
-                    entered = safe_input(prompt, "")
-            else:
+        print("\n\033[1;36m[SETUP]\033[0m An OpenRouter API key enables cloud models (Qwen, DeepSeek, Kimi, GPT-5 series, etc).", file=sys.stderr)
+        print("         If you only want local models (Ollama / LM Studio / vLLM), press Enter to skip.\n", file=sys.stderr)
+        prompt = "Enter OpenRouter API Key (sk-or-v1-...) or press Enter to skip: "
+        if sys.stdin.isatty():
+            try:
+                entered = getpass.getpass(prompt).strip()
+            except Exception:
                 entered = safe_input(prompt, "")
+        else:
+            entered = safe_input(prompt, "")
 
-            if not entered:
-                warn("API key cannot be empty. Get one at: https://openrouter.ai/keys")
-                continue
-
+        if entered:
             info("Validating key with OpenRouter API...")
             valid, msg = validate_openrouter_key(entered)
             if valid:
                 success(f"OpenRouter API key verified successfully ({msg})")
                 api_key = entered
-                break
             else:
                 error(f"API key validation failed: {msg}")
-                retry = safe_input("Do you want to use this key anyway? (y/N): ", "n").lower()
+                retry = safe_input("Use this key anyway? (y/N): ", "n").lower()
                 if retry in ("y", "yes"):
                     api_key = entered
-                    break
+        else:
+            info("Skipping OpenRouter API key — only local models will be available.")
 
     if os.path.exists(env_path):
         backup_env = f"{env_path}.bak.{int(datetime.now().timestamp())}"
@@ -274,9 +271,12 @@ def setup_env(force=False):
             pass
 
     with open(env_path, "w", encoding="utf-8") as f:
-        f.write(f"OPENROUTER_API_KEY={api_key}\nPORT={PORT}\n")
+        f.write(f"OPENROUTER_API_KEY={api_key or ''}\nPORT={PORT}\n")
     os.chmod(env_path, 0o600)
-    success(f"Environment file written to {env_path}")
+    if api_key:
+        success(f"OpenRouter API key saved to {env_path}")
+    else:
+        info(f"Environment file written to {env_path} (no OpenRouter key set)")
 
 
 def read_current_config():
@@ -534,19 +534,28 @@ def run_model_configuration():
 
     for idx, t in enumerate(tiers, 1):
         print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
-        
+
         current_model_id = current_config.get(t["claude_name"])
         matched_current_idx = None
         recommended_idx = 1
 
         all_options = list(t["options"])
 
-        # Inject discovered local engine models into options
+        # Collect local models, group by engine
+        local_by_engine = {}
         for engine in local_engines:
             for lm in engine["models"]:
+                key = engine["name"]
+                local_by_engine.setdefault(key, []).append(lm)
                 all_options.append(lm)
 
+        # Print OpenRouter cloud options
+        openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
+        if openrouter_opts:
+            print(f"  \033[1;34m☁  OpenRouter\033[0m", file=sys.stderr)
         for opt_idx, opt in enumerate(all_options, 1):
+            if opt.get("provider") != "openrouter":
+                continue
             is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
             if is_current:
                 matched_current_idx = opt_idx
@@ -558,11 +567,38 @@ def run_model_configuration():
                 tags.append("\033[1;32m(Recommended)\033[0m")
             if is_current:
                 tags.append("\033[1;33m[CURRENT]\033[0m")
-            if opt.get("provider") in ("ollama", "lmstudio", "vllm"):
-                tags.append(f"\033[1;36m[{opt['provider'].capitalize()} / Local]\033[0m")
+            tag_str = f"  {' '.join(tags)}" if tags else ""
+            print(f"  {opt_idx}) {opt['name']:<26} {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
-            tag_str = f" {' '.join(tags)}" if tags else ""
-            print(f"{opt_idx}) {opt['name']:<24} - {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
+        # Print local engine options, grouped by engine name
+        printed_engines = set()
+        for opt_idx, opt in enumerate(all_options, 1):
+            prov = opt.get("provider")
+            if prov not in ("ollama", "lmstudio", "vllm", "openai") or opt.get("api_base") is None:
+                continue
+            engine_name = opt.get("name", "").replace(f" ({opt.get('raw_model_id', '')})", "").strip()
+            # Derive engine header from name
+            if "Ollama" in opt.get("name", ""):
+                header_key = "Ollama"
+            elif "LM Studio" in opt.get("name", ""):
+                header_key = "LM Studio"
+            elif "vLLM" in opt.get("name", ""):
+                header_key = "vLLM"
+            else:
+                header_key = prov.capitalize()
+            if header_key not in printed_engines:
+                print(f"  \033[1;36m⬡  {header_key} (Local)\033[0m", file=sys.stderr)
+                printed_engines.add(header_key)
+
+            is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
+            if is_current:
+                matched_current_idx = opt_idx
+            tags = []
+            if is_current:
+                tags.append("\033[1;33m[CURRENT]\033[0m")
+            tag_str = f"  {' '.join(tags)}" if tags else ""
+            raw_display = opt.get("raw_model_id", opt["id"])
+            print(f"  {opt_idx}) {raw_display:<26} $0.00 / Local{tag_str}", file=sys.stderr)
 
         custom_openrouter_num = len(all_options) + 1
         custom_local_num = len(all_options) + 2
@@ -571,8 +607,9 @@ def run_model_configuration():
             custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
             matched_current_idx = custom_openrouter_num
 
-        print(f"{custom_openrouter_num}) Custom OpenRouter Model ID{custom_tag}", file=sys.stderr)
-        print(f"{custom_local_num}) Custom Local / OpenAI-Compatible Endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
+        print(f"  \033[1;33m✎  Custom\033[0m", file=sys.stderr)
+        print(f"  {custom_openrouter_num}) Custom OpenRouter model ID{custom_tag}", file=sys.stderr)
+        print(f"  {custom_local_num}) Custom local / OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
 
         if matched_current_idx is not None:
             default_choice = str(matched_current_idx)

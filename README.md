@@ -6,7 +6,7 @@
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
 [![Release](https://img.shields.io/github/v/release/axiomantic/claude-any-model?include_prereleases&color=green)](https://github.com/axiomantic/claude-any-model/releases)
 
-Route Claude Desktop and Claude CLI requests to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, and GLM-5.2) with live token pricing shown directly in Claude's model picker.
+Route Claude Desktop and Claude CLI requests to any model — hundreds of cloud models via OpenRouter, or your own local engines (Ollama, LM Studio, vLLM) — with live token pricing shown directly in Claude's model picker.
 
 ---
 
