@@ -731,45 +731,73 @@ usage() {
     exit 1
 }
 
+cmd_install() {
+    ensure_dirs
+    setup_env
+    setup_venv
+    run_model_configuration
+    create_runner_script
+    install_service
+    status_service
+    post_setup_prompt
+}
+
+cmd_models() {
+    ensure_dirs
+    run_model_configuration
+    local restart_needed=false
+    if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
+        restart_needed=true
+    else
+        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+            if launchctl list "${legacy_label}" >/dev/null 2>&1; then
+                restart_needed=true
+                break
+            fi
+        done
+    fi
+
+    if [ "$restart_needed" = true ]; then
+        info "Restarting proxy to apply new YAML configuration..."
+        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+            launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
+            rm -f "${HOME}/Library/LaunchAgents/${legacy_label}.plist"
+        done
+        launchctl unload "${PLIST_PATH}" 2>/dev/null || true
+        install_service
+        success "Proxy restarted with updated configuration."
+    fi
+    status_service
+    post_setup_prompt
+}
+
+cmd_restart() {
+    ensure_dirs
+    create_runner_script
+    install_service
+    status_service
+}
+
+cmd_start() {
+    launchctl load "${PLIST_PATH}"
+    success "Started ${PLIST_LABEL}"
+}
+
+cmd_stop() {
+    launchctl unload "${PLIST_PATH}" 2>/dev/null || true
+    for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
+        launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
+    done
+    success "Stopped proxy daemon"
+}
+
 # Command dispatch
 case "${1:-install}" in
     install)
-        ensure_dirs
-        setup_env
-        setup_venv
-        run_model_configuration
-        create_runner_script
-        install_service
-        status_service
-        post_setup_prompt
+        cmd_install
         ;;
     models)
-        ensure_dirs
-        run_model_configuration
-        local restart_needed=false
-        if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
-            restart_needed=true
-        else
-            for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-                if launchctl list "${legacy_label}" >/dev/null 2>&1; then
-                    restart_needed=true
-                    break
-                fi
-            done
-        fi
-
-        if [ "$restart_needed" = true ]; then
-            info "Restarting proxy to apply new YAML configuration..."
-            for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-                launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
-                rm -f "${HOME}/Library/LaunchAgents/${legacy_label}.plist"
-            done
-            launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-            install_service
-            success "Proxy restarted with updated configuration."
-        fi
-        status_service
-        post_setup_prompt
+        cmd_models
         ;;
     uninstall)
         uninstall_service
@@ -778,21 +806,13 @@ case "${1:-install}" in
         status_service
         ;;
     start)
-        launchctl load "${PLIST_PATH}"
-        success "Started ${PLIST_LABEL}"
+        cmd_start
         ;;
     stop)
-        launchctl unload "${PLIST_PATH}" 2>/dev/null || true
-        for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-            launchctl unload "${HOME}/Library/LaunchAgents/${legacy_label}.plist" 2>/dev/null || true
-        done
-        success "Stopped proxy daemon"
+        cmd_stop
         ;;
     restart)
-        ensure_dirs
-        create_runner_script
-        install_service
-        status_service
+        cmd_restart
         ;;
     version|--version|-v)
         echo "Claude OpenRouter Models v${VERSION}"
