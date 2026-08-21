@@ -1,4 +1,4 @@
-# Claude OpenRouter Models (`claude-openrouter-models`)
+# Claude OpenRouter Models
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
