@@ -46,20 +46,32 @@ If configuring or verifying via the Claude Desktop in-app menu (**Developer > Co
 
 ## 📦 Migrating Existing Sessions to Gateway Mode
 
-When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to a dedicated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects won't appear by default.
+When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects won't appear by default.
 
-To bring over all your previous sessions:
+### 1. Enable the Import Feature in Your 3P Profile
+By default, Gateway mode disables the migration UI and shows:
+> *"Import isn’t enabled for this deployment. Contact your organization’s administrator to turn it on."*
 
-1. Launch Claude Desktop in Gateway mode.
-2. Open **Settings** (`Cmd + ,` on macOS) → **Import** (or **Data / Sessions → Import**).
+To unlock it:
+* **Automatic:** Run `./setup.sh install` or `./setup.sh models` (which automatically injects `"claudeAiImport": { "enabled": true }` into your active profile).
+* **Manual:** If you configured 3P mode by hand, add the `claudeAiImport` block to your active profile in `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`:
+  ```json
+  "claudeAiImport": {
+    "enabled": true,
+    "exportEnabled": true,
+    "bannerBehavior": "detect"
+  }
+  ```
+
+### 2. Import Your Sessions
+1. Restart Claude Desktop in Gateway mode.
+2. Open **Settings** (`Cmd + ,` on macOS) → **Import**.
 3. Select your local sources:
-   * **Claude app data** (imports chats and desktop sessions from standard mode)
+   * **Claude app data** (imports previous 1P Desktop chat/code sessions)
    * **Terminal (CLI)** (imports CLI sessions from `~/.claude/projects/`)
 4. Click **Import**.
 
 Your historical sessions, custom titles, and project groupings will immediately appear in your sidebar and search.
-
-*(Note: `./setup.sh install` and `./setup.sh models` automatically enable the import capability in your 3P profile configuration).*
 
 ---
 
