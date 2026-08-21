@@ -219,52 +219,111 @@ def validate_openrouter_key(api_key):
         warn(f"Could not verify OpenRouter key ({e}). Proceeding anyway in case of offline/firewall restrictions.")
     return True
 
-def setup_env(force=False):
+def find_existing_api_key():
+    # 1. Check current .env
     env_path = os.path.join(APP_DIR, ".env")
-    has_key = False
     if os.path.exists(env_path):
         try:
             with open(env_path, "r", encoding="utf-8") as f:
                 for line in f:
-                    if line.startswith("OPENROUTER_API_KEY=") and len(line.split("=", 1)[1].strip()) > 5:
-                        has_key = True
-                        break
+                    if line.startswith("OPENROUTER_API_KEY="):
+                        val = line.split("=", 1)[1].strip()
+                        if len(val) > 5:
+                            return val
         except Exception:
             pass
 
-    if has_key and not force:
-        return
+    # 2. Check legacy app dirs
+    for leg in LEGACY_APP_DIRS:
+        leg_env = os.path.join(leg, ".env")
+        if os.path.exists(leg_env):
+            try:
+                with open(leg_env, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("OPENROUTER_API_KEY="):
+                            val = line.split("=", 1)[1].strip()
+                            if len(val) > 5:
+                                return val
+            except Exception:
+                pass
 
-    if has_key and force:
-        info(f"Existing .env file found at {env_path}.")
-        choice = safe_input("Do you want to overwrite your OpenRouter API key? (y/N): ", "n")
-        if choice.lower() != "y":
+    # 3. Check process environment
+    env_var = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if len(env_var) > 5:
+        return env_var
+
+    return ""
+
+def mask_key(key):
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:8]}...{key[-4:]}"
+
+def setup_env():
+    env_path = os.path.join(APP_DIR, ".env")
+    existing_key = find_existing_api_key()
+
+    if existing_key:
+        info(f"Existing OpenRouter API key found: {mask_key(existing_key)}")
+        keep_choice = safe_input("Keep existing OpenRouter API key? (Y/n): ", "y")
+        if keep_choice.lower() == "y":
+            # Ensure persisted to .env if not already there
+            if not os.path.exists(env_path):
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.write(f"OPENROUTER_API_KEY={existing_key}\nPORT={PORT}\n")
+                os.chmod(env_path, 0o600)
+                success(f"Preserved API key to {env_path}")
+            return
+        
+        # User explicitly wants to change key
+        print("\nEntering new OpenRouter API key (press Enter to cancel and keep current key):", file=sys.stderr)
+        try:
+            if sys.stdin.isatty():
+                new_key = getpass.getpass("New OpenRouter API Key (sk-or-v1-...): ")
+            else:
+                new_key = safe_input("New OpenRouter API Key (sk-or-v1-...): ", "")
+        except Exception:
+            new_key = safe_input("New OpenRouter API Key (sk-or-v1-...): ", "")
+
+        new_key = new_key.strip()
+        if not new_key:
+            info("No new key entered. Keeping existing API key.")
             return
 
-    if not has_key:
-        warn(f"No OpenRouter API key found in {env_path}.")
+        api_key = new_key
+    else:
+        # No existing key found anywhere
+        warn("No OpenRouter API key found.")
         print("\033[1;36m[SETUP]\033[0m An OpenRouter API key is required for Claude Desktop Gateway mode.", file=sys.stderr)
-
-    print("", file=sys.stderr)
-    try:
-        if sys.stdin.isatty():
-            api_key = getpass.getpass("Enter your OpenRouter API Key (sk-or-v1-...): ")
-        else:
+        print("", file=sys.stderr)
+        try:
+            if sys.stdin.isatty():
+                api_key = getpass.getpass("Enter your OpenRouter API Key (sk-or-v1-...): ")
+            else:
+                api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
+        except Exception:
             api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
-    except Exception:
-        api_key = safe_input("Enter your OpenRouter API Key (sk-or-v1-...): ", "")
 
-    api_key = api_key.strip()
-    if not api_key:
-        error("API key cannot be empty.")
-        sys.exit(1)
+        api_key = api_key.strip()
+        if not api_key:
+            error("API key cannot be empty.")
+            sys.exit(1)
 
     validate_openrouter_key(api_key)
+
+    # Backup existing .env if present
+    if os.path.exists(env_path):
+        bak_path = f"{env_path}.bak.{int(datetime.now().timestamp())}"
+        try:
+            shutil.copy2(env_path, bak_path)
+        except Exception:
+            pass
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(f"OPENROUTER_API_KEY={api_key}\nPORT={PORT}\n")
     os.chmod(env_path, 0o600)
     success(f"Environment file written to {env_path}")
+
 
 def read_current_config():
     config_path = os.path.join(APP_DIR, "config.yaml")
