@@ -37,7 +37,19 @@ jobs:
         run: |
           python3 scripts/update_recommendations.py --apply
 
+      - name: Push Automated Update Branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n $(git status --porcelain) ]]; then
+            git checkout -B automated/model-catalog-update
+            git add setup.sh MODEL_RECOMMENDATIONS_REPORT.md
+            git commit -m "chore(models): weekly openrouter recommendations update"
+            git push -f origin automated/model-catalog-update || true
+          fi
+
       - name: Create Pull Request with Model Updates
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -51,18 +63,20 @@ jobs:
             models
             dependencies
 
-      - name: Post Issue Summary (if scheduled run)
-        if: github.event_name == 'schedule'
+      - name: Post Issue with Semantic Evaluation Report
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('MODEL_RECOMMENDATIONS_REPORT.md', 'utf8');
-            const today = new Date().toISOString().split('T')[0];
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `📋 Weekly OpenRouter Catalog Scan Report (${today})`,
-              body: report,
-              labels: ['model-catalog-scan', 'automated']
-            });
+            if (fs.existsSync('MODEL_RECOMMENDATIONS_REPORT.md')) {
+              const report = fs.readFileSync('MODEL_RECOMMENDATIONS_REPORT.md', 'utf8');
+              const today = new Date().toISOString().split('T')[0];
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🤖 Weekly OpenRouter Semantic Scan Report (${today})`,
+                body: report + "\n\n---\n*Branch `automated/model-catalog-update` has been updated with proposed changes.*",
+                labels: ['model-catalog-scan', 'automated']
+              });
+            }
+
