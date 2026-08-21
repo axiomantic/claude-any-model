@@ -1240,8 +1240,153 @@ def status_service():
         except Exception:
             pass
 
+def is_desktop_commander_installed():
+    """Check if desktop-commander MCP is registered in Claude Code global MCP list."""
+    try:
+        res = subprocess.run(["claude", "mcp", "list", "-s", "user"], capture_output=True, text=True)
+        return "desktop-commander" in res.stdout
+    except Exception:
+        return False
+
+def install_desktop_commander():
+    """Install Desktop Commander MCP for both Claude Code CLI and Claude Desktop."""
+    header("Desktop Commander MCP Setup")
+    print("\033[1;36m[INFO]\033[0m Desktop Commander replaces built-in file/shell tools (Edit, Write, Read,", file=sys.stderr)
+    print("       Bash, Glob, Grep) with MCP equivalents — required in Gateway mode.", file=sys.stderr)
+
+    # ── Claude Code CLI ───────────────────────────────────────────────────────
+    if is_desktop_commander_installed():
+        info("Desktop Commander already registered in Claude Code (user scope).")
+    else:
+        info("Registering desktop-commander in Claude Code CLI (user scope)...")
+        res = subprocess.run(
+            ["claude", "mcp", "add", "-s", "user", "desktop-commander", "--", "npx", "-y", "@wonderwhy-er/desktop-commander"],
+            capture_output=True, text=True
+        )
+        if res.returncode == 0:
+            success("Desktop Commander registered in Claude Code CLI.")
+        else:
+            warn(f"Could not register via 'claude mcp add': {res.stderr.strip()}")
+            warn("You can add it manually: claude mcp add -s user desktop-commander -- npx -y @wonderwhy-er/desktop-commander")
+
+    # ── Claude Code: disable built-in tools ───────────────────────────────────
+    claude_settings_path = os.path.expanduser("~/.claude/settings.json")
+    os.makedirs(os.path.dirname(claude_settings_path), exist_ok=True)
+    builtin_tools = ["Edit", "Write", "Read", "Bash", "Glob", "Grep"]
+    try:
+        settings = {}
+        if os.path.exists(claude_settings_path):
+            with open(claude_settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        existing = settings.get("disallowedTools", [])
+        merged = sorted(set(existing) | set(builtin_tools))
+        settings["disallowedTools"] = merged
+        with open(claude_settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+        success(f"Disabled built-in tools in Claude Code settings: {builtin_tools}")
+    except Exception as e:
+        warn(f"Could not update {claude_settings_path}: {e}")
+
+    # ── Claude Desktop: add to claude_desktop_config.json ────────────────────
+    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
+    if os.path.exists(os.path.dirname(desktop_config_path)):
+        try:
+            desktop_cfg = {}
+            if os.path.exists(desktop_config_path):
+                with open(desktop_config_path, "r", encoding="utf-8") as f:
+                    desktop_cfg = json.load(f)
+            desktop_cfg.setdefault("mcpServers", {})["desktop-commander"] = {
+                "command": "npx",
+                "args": ["-y", "@wonderwhy-er/desktop-commander"]
+            }
+            with open(desktop_config_path, "w", encoding="utf-8") as f:
+                json.dump(desktop_cfg, f, indent=2)
+            success(f"Added desktop-commander to Claude Desktop config.")
+        except Exception as e:
+            warn(f"Could not update Claude Desktop config: {e}")
+
+    print("", file=sys.stderr)
+    info("Add this to your project CLAUDE.md for best results:")
+    print("  Native file and terminal tools are disabled. Use desktop-commander MCP tools", file=sys.stderr)
+    print("  (edit_block, write_file, search_files, start_process) for all file and shell ops.", file=sys.stderr)
+
+def uninstall_desktop_commander():
+    """Remove Desktop Commander MCP from Claude Code CLI and Claude Desktop."""
+    info("Removing Desktop Commander MCP...")
+
+    # Claude Code CLI
+    if is_desktop_commander_installed():
+        res = subprocess.run(["claude", "mcp", "remove", "-s", "user", "desktop-commander"], capture_output=True, text=True)
+        if res.returncode == 0:
+            success("Removed desktop-commander from Claude Code CLI.")
+        else:
+            warn(f"Could not remove via 'claude mcp remove': {res.stderr.strip()}")
+
+    # Claude Code: re-enable built-in tools
+    claude_settings_path = os.path.expanduser("~/.claude/settings.json")
+    if os.path.exists(claude_settings_path):
+        try:
+            with open(claude_settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            builtin_tools = {"Edit", "Write", "Read", "Bash", "Glob", "Grep"}
+            settings["disallowedTools"] = [t for t in settings.get("disallowedTools", []) if t not in builtin_tools]
+            with open(claude_settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2)
+            success("Re-enabled built-in tools in Claude Code settings.")
+        except Exception as e:
+            warn(f"Could not update {claude_settings_path}: {e}")
+
+    # Claude Desktop config
+    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
+    if os.path.exists(desktop_config_path):
+        try:
+            with open(desktop_config_path, "r", encoding="utf-8") as f:
+                desktop_cfg = json.load(f)
+            desktop_cfg.get("mcpServers", {}).pop("desktop-commander", None)
+            with open(desktop_config_path, "w", encoding="utf-8") as f:
+                json.dump(desktop_cfg, f, indent=2)
+            success("Removed desktop-commander from Claude Desktop config.")
+        except Exception as e:
+            warn(f"Could not update Claude Desktop config: {e}")
+
+def launch_claude_cli(extra_args=None):
+    """Launch Claude CLI with ANTHROPIC_BASE_URL pointing at the local proxy."""
+    env = os.environ.copy()
+    env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{PORT}"
+    env["ANTHROPIC_API_KEY"] = "dummy-key"
+    # Load .env for any extra vars (OPENROUTER_API_KEY, etc.)
+    env_path = os.path.join(APP_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    env.setdefault(k.strip(), v.strip())
+
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        error("'claude' binary not found on PATH. Install Claude Code: https://claude.ai/code")
+        sys.exit(1)
+
+    info(f"Launching Claude CLI → proxy on http://127.0.0.1:{PORT}")
+    cmd = [claude_bin] + (extra_args or [])
+    os.execve(claude_bin, cmd, env)
+
 def post_setup_prompt():
     print("", file=sys.stderr)
+    # Offer Desktop Commander install if not already present
+    if not is_desktop_commander_installed():
+        print("\033[1;36m[TIP]\033[0m In Gateway mode, built-in file/shell tools (Edit, Write, Bash, etc.)", file=sys.stderr)
+        print("     are replaced by Desktop Commander MCP for full agentic capabilities.", file=sys.stderr)
+        ans = safe_input("Install Desktop Commander MCP now? (Y/n): ", "y").lower()
+        if ans in ("y", "yes", ""):
+            install_desktop_commander()
+
+    print("", file=sys.stderr)
+    info(f"Launch Claude CLI via proxy:  ./setup.sh launch")
+    info(f"  — or manually: ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT} ANTHROPIC_API_KEY=dummy-key claude")
+
     if not is_claude_running():
         ans = safe_input("Would you like to open Claude Desktop now? (Y/n): ", "y").lower()
         if ans in ("y", "yes", ""):
@@ -1250,17 +1395,19 @@ def post_setup_prompt():
 
 def usage():
     print(f"Claude Any Model Setup v{VERSION}", file=sys.stderr)
-    print("Usage: setup.sh {install|models|switch|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
+    print("Usage: setup.sh {install|models|switch|launch|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
     print("Commands:", file=sys.stderr)
-    print("  switch [mode] - Easily toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
-    print("  install       - Full setup: venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
-    print("  models        - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
-    print("  status        - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
-    print("  start         - Starts the launchd daemon", file=sys.stderr)
-    print("  stop          - Stops the launchd daemon", file=sys.stderr)
-    print("  restart       - Restarts the launchd daemon", file=sys.stderr)
-    print("  uninstall     - Unregisters and deletes the launchd startup daemon", file=sys.stderr)
-    print("  version       - Displays the current proxy script version", file=sys.stderr)
+    print("  switch [mode]  - Toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
+    print("  launch [args]  - Launch Claude CLI routed through the local proxy (sets ANTHROPIC_BASE_URL)", file=sys.stderr)
+    print("  install        - Full setup: venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
+    print("  models         - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
+    print("  desktop-commander - Install Desktop Commander MCP (required for tool use in Gateway mode)", file=sys.stderr)
+    print("  status         - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
+    print("  start          - Starts the launchd daemon", file=sys.stderr)
+    print("  stop           - Stops the launchd daemon", file=sys.stderr)
+    print("  restart        - Restarts the launchd daemon", file=sys.stderr)
+    print("  uninstall      - Unregisters launchd daemon, optionally removes Desktop Commander", file=sys.stderr)
+    print("  version        - Displays the current proxy script version", file=sys.stderr)
     sys.exit(1)
 
 def main():
@@ -1269,6 +1416,10 @@ def main():
     if cmd in ("switch", "mode", "toggle"):
         target = sys.argv[2] if len(sys.argv) > 2 else "toggle"
         switch_claude_mode(target)
+    elif cmd in ("launch", "run"):
+        launch_claude_cli(extra_args=sys.argv[2:])
+    elif cmd in ("desktop-commander", "dc"):
+        install_desktop_commander()
     elif cmd == "install":
         ensure_dirs()
         setup_env()
@@ -1300,11 +1451,16 @@ def main():
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
         success("Stopped proxy daemon")
     elif cmd == "uninstall":
+        if is_desktop_commander_installed():
+            ans = safe_input("Remove Desktop Commander MCP as well? (Y/n): ", "y").lower()
+            if ans in ("y", "yes", ""):
+                uninstall_desktop_commander()
         uninstall_service()
     elif cmd in ("version", "--version", "-v"):
         print(f"Claude Any Model v{VERSION}")
     else:
         usage()
+
 
 if __name__ == "__main__":
     try:

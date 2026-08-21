@@ -138,27 +138,66 @@ Check the active mode and proxy health at any time:
 ## CLI Commands
 
 ```bash
-./setup.sh switch [mode] # Toggle or switch mode ('gateway' or 'regular')
-./setup.sh models        # Switch or reconfigure tier models (fetches live OpenRouter prices)
-./setup.sh status        # Check active mode, background daemon health and Claude 3P profile
-./setup.sh restart       # Restart local gateway daemon
-./setup.sh uninstall     # Stop and remove background service and proxy files
+./setup.sh install            # Full setup: venv, API key, model picker, daemon, Desktop Commander
+./setup.sh launch             # Launch Claude CLI routed through the local proxy
+./setup.sh models             # Reconfigure tier models (live OpenRouter prices)
+./setup.sh switch [mode]      # Toggle between 'gateway' and 'regular' Claude mode
+./setup.sh desktop-commander  # Install Desktop Commander MCP (tool support in Gateway mode)
+./setup.sh status             # Check active mode, daemon health, and Claude 3P profile
+./setup.sh restart            # Restart local gateway daemon
+./setup.sh uninstall          # Stop and remove background service, optionally remove Desktop Commander
 ```
-
 
 ---
 
 ## Using with Claude CLI (Claude Code)
 
-You can route the official `claude` terminal CLI through the same local proxy:
+### Recommended: use the built-in launcher
 
 ```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:3010"
-export ANTHROPIC_API_KEY="dummy-key"
-claude
+./setup.sh launch
 ```
 
-The CLI will route requests to your configured OpenRouter models while preserving prompt caching and context management.
+This sets the correct env vars and `exec`s into `claude` — no need to remember export commands.
+
+### Manual launch
+
+```bash
+ANTHROPIC_BASE_URL="http://127.0.0.1:3010" ANTHROPIC_API_KEY="dummy-key" claude
+```
+
+Or add to your shell profile for a persistent alias:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+alias claude-proxy='ANTHROPIC_BASE_URL="http://127.0.0.1:3010" ANTHROPIC_API_KEY="dummy-key" claude'
+```
+
+---
+
+## Desktop Commander MCP (Required for Tool Use in Gateway Mode)
+
+In Gateway mode, Claude Desktop's built-in tools (Edit, Write, Read, Bash, Glob, Grep) are disabled by the gateway profile. **Desktop Commander** is an MCP server that replaces them with equivalent MCP tools (`edit_block`, `write_file`, `search_files`, `start_process`), restoring full agentic capabilities.
+
+The installer will offer to set this up automatically. You can also run it manually at any time:
+
+```bash
+./setup.sh desktop-commander
+```
+
+This installs Desktop Commander in both Claude Code CLI and Claude Desktop, and disables the built-in tools in `~/.claude/settings.json`.
+
+To uninstall it (also offered during `./setup.sh uninstall`):
+
+```bash
+./setup.sh uninstall   # prompts to remove Desktop Commander as well
+```
+
+> **CLAUDE.md tip:** Add this to your project's `CLAUDE.md` when Desktop Commander is active:
+> ```
+> Native file and terminal tools are disabled. Use desktop-commander MCP tools
+> (edit_block, write_file, search_files, start_process) for all file and shell ops.
+> ```
 
 ---
 
