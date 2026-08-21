@@ -1096,9 +1096,11 @@ def status_service():
 
     # Check local engines
     local_engines = fetch_local_engines()
-    if local_engines:
-        for le in local_engines:
-            success(f"Local Engine: {le['name']} at {le['api_base']} is ONLINE ({len(le['models'])} model(s) available)")
+    engine_labels = {"ollama": ("Ollama", "http://localhost:11434"), "lmstudio": ("LM Studio", "http://localhost:1234/v1"), "vllm": ("vLLM", "http://localhost:8000/v1")}
+    for key, names in local_engines.items():
+        if names:
+            label, url = engine_labels.get(key, (key, ""))
+            success(f"Local Engine: {label} at {url} is ONLINE ({len(names)} model(s) installed)")
 
     # Check .env credentials
     env_path = os.path.join(APP_DIR, ".env")
