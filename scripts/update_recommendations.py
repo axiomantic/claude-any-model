@@ -156,15 +156,19 @@ def main():
             with open(setup_path, "r", encoding="utf-8") as f:
                 content = f.read()
             import re
+            # Update bash assignment (no spaces)
             updated_content = re.sub(
-                r'MODELS_LAST_REVISITED="[^"]+"',
+                r'^MODELS_LAST_REVISITED="[^"]+"',
                 f'MODELS_LAST_REVISITED="{today_str}"',
-                content
+                content,
+                flags=re.MULTILINE
             )
+            # Update inlined Python assignment (with spaces)
             updated_content = re.sub(
-                r'MODELS_LAST_REVISITED\s*=\s*"[^"]+"',
+                r'^MODELS_LAST_REVISITED = "[^"]+"',
                 f'MODELS_LAST_REVISITED = "{today_str}"',
-                updated_content
+                updated_content,
+                flags=re.MULTILINE
             )
             with open(setup_path, "w", encoding="utf-8") as f:
                 f.write(updated_content)
@@ -172,4 +176,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

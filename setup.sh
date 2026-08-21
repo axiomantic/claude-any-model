@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Script and Service Version
 VERSION="1.2.0"
-MODELS_LAST_REVISITED = "2026-08-21"
+MODELS_LAST_REVISITED="2026-08-21"
+
 
 
 # Configuration paths
