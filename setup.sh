@@ -1,36 +1,63 @@
 #!/usr/bin/env bash
 """:"
 # ==============================================================================
-# 🐍💀 Bash/Python Polyglot Bootstrapper (Pymera pattern)
-# Minimal Bash layer ensures Python 3 virtual environment with LiteLLM exists,
-# then seamlessly re-executes this same file as a Python program.
+# 🐍💀 Bash/Python Polyglot Bootstrapper (Pymera + uv pattern)
+# Uses uv to ensure managed Python (3.12) & virtualenv exist with LiteLLM,
+# then seamlessly re-executes this file as a Python program.
 # ==============================================================================
 set -euo pipefail
 
 APP_DIR="${HOME}/.claude-openrouter-models"
 VENV_DIR="${APP_DIR}/venv"
-PYTHON_BIN="${VENV_DIR}/bin/python3"
+PYTHON_TARGET="3.12"
 
-# 1. Verify system Python 3 exists
-if ! command -v python3 &>/dev/null; then
-    echo -e "\033[1;31m[ERROR]\033[0m Python 3 is required but not found in PATH." >&2
-    exit 1
+# 1. Locate or auto-install uv (ultra-fast standalone Python & package manager)
+if command -v uv &>/dev/null; then
+    UV_BIN="uv"
+elif [ -x "${HOME}/.local/bin/uv" ]; then
+    UV_BIN="${HOME}/.local/bin/uv"
+elif [ -x "${HOME}/.cargo/bin/uv" ]; then
+    UV_BIN="${HOME}/.cargo/bin/uv"
+else
+    echo -e "\033[1;34m[INFO]\033[0m Installing uv (fast standalone Python runtime manager)..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || true
+    if [ -x "${HOME}/.local/bin/uv" ]; then
+        UV_BIN="${HOME}/.local/bin/uv"
+    elif [ -x "${HOME}/.cargo/bin/uv" ]; then
+        UV_BIN="${HOME}/.cargo/bin/uv"
+    else
+        UV_BIN=""
+    fi
 fi
 
-# 2. Bootstrap virtual environment with dependencies if needed
-if [ ! -x "${PYTHON_BIN}" ]; then
-    echo -e "\033[1;34m[INFO]\033[0m Setting up Python environment in ${VENV_DIR}..."
-    mkdir -p "${APP_DIR}"
-    python3 -m venv "${VENV_DIR}"
-    "${VENV_DIR}/bin/pip" install --quiet --upgrade pip
-    "${VENV_DIR}/bin/pip" install --quiet 'fastapi<0.140' 'litellm[proxy]'
+# 2. Bootstrap virtual environment with target Python version
+mkdir -p "${APP_DIR}"
+if [ -n "${UV_BIN}" ]; then
+    PYTHON_BIN="${VENV_DIR}/bin/python"
+    if [ ! -x "${PYTHON_BIN}" ]; then
+        echo -e "\033[1;34m[INFO]\033[0m Initializing Python ${PYTHON_TARGET} virtualenv with uv..."
+        "${UV_BIN}" venv "${VENV_DIR}" --python "${PYTHON_TARGET}" --quiet
+        "${UV_BIN}" pip install --python "${PYTHON_BIN}" 'fastapi<0.140' 'litellm[proxy]' --quiet
+    fi
+else
+    # Fallback to system python3 if uv is unavailable
+    PYTHON_BIN="${VENV_DIR}/bin/python3"
+    if [ ! -x "${PYTHON_BIN}" ]; then
+        if ! command -v python3 &>/dev/null; then
+            echo -e "\033[1;31m[ERROR]\033[0m Python 3 is required but not found in PATH." >&2
+            exit 1
+        fi
+        echo -e "\033[1;34m[INFO]\033[0m Initializing Python virtual environment..."
+        python3 -m venv "${VENV_DIR}"
+        "${VENV_DIR}/bin/pip" install --quiet --upgrade pip
+        "${VENV_DIR}/bin/pip" install --quiet 'fastapi<0.140' 'litellm[proxy]'
+    fi
 fi
 
 # 3. Determine script location (handle curl one-liner pipe vs local file)
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     SCRIPT_PATH="${BASH_SOURCE[0]}"
 else
-    mkdir -p "${APP_DIR}"
     SCRIPT_PATH="${APP_DIR}/setup.sh"
     curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models/main/setup.sh -o "${SCRIPT_PATH}" 2>/dev/null || true
     chmod +x "${SCRIPT_PATH}"
@@ -43,6 +70,7 @@ else
     exec "${PYTHON_BIN}" "${SCRIPT_PATH}" "$@"
 fi
 exit 0
+
 """
 
 # ==============================================================================
