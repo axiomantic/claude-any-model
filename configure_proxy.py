@@ -113,9 +113,10 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
     }
 
 def main():
-    app_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.claude-to-openrouter-proxy")
+    app_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.claude-openrouter-models")
     claude_3p_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/Library/Application Support/Claude-3p/configLibrary")
     port = sys.argv[3] if len(sys.argv) > 3 else "3010"
+
 
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config(app_dir)

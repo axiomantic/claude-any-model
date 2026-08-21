@@ -44,6 +44,25 @@ If configuring or verifying via the Claude Desktop in-app menu (**Developer > Co
 
 ---
 
+## 📦 Migrating Existing Sessions to Gateway Mode
+
+When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to a dedicated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects won't appear by default.
+
+To bring over all your previous sessions:
+
+1. Launch Claude Desktop in Gateway mode.
+2. Open **Settings** (`Cmd + ,` on macOS) → **Import** (or **Data / Sessions → Import**).
+3. Select your local sources:
+   * **Claude app data** (imports chats and desktop sessions from standard mode)
+   * **Terminal (CLI)** (imports CLI sessions from `~/.claude/projects/`)
+4. Click **Import**.
+
+Your historical sessions, custom titles, and project groupings will immediately appear in your sidebar and search.
+
+*(Note: `./setup.sh install` and `./setup.sh models` automatically enable the import capability in your 3P profile configuration).*
+
+---
+
 ## 🛠️ CLI Commands
 
 ```bash
