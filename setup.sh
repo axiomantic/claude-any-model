@@ -909,6 +909,11 @@ strict_guardrail = StrictModelGuardrail()
         "inferenceModels": inference_models,
         "inferenceProvider": "gateway",
         "inferenceCredentialKind": "static",
+        # Enable embedded Claude Code agent and all built-in tools in Gateway mode.
+        # Without these, the client defaults to sandboxed/restricted mode.
+        "codeEnabled": True,
+        "agentEnabled": True,
+        "disabledBuiltinTools": [],
         "claudeAiImport": {
             "enabled": True,
             "exportEnabled": True,
