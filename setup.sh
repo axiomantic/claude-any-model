@@ -258,16 +258,22 @@ def setup_env(force=False):
     env_path = os.path.join(APP_DIR, ".env")
     existing_key = find_existing_api_key()
 
+    # If key is already available and not forcing confirmation, silently proceed
     if existing_key and not force:
+        if not os.path.exists(env_path):
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(f"OPENROUTER_API_KEY={existing_key}\nPORT={PORT}\n")
+            os.chmod(env_path, 0o600)
+        return
+
+    api_key = None
+    if existing_key:
         masked = mask_key(existing_key)
         info(f"Found existing OpenRouter API Key: \033[1;32m{masked}\033[0m")
         use_existing = safe_input("Use this API key? (Y/n): ", "y").lower()
         if use_existing in ("y", "yes", ""):
             api_key = existing_key
-        else:
-            api_key = None
-    else:
-        api_key = None
+
 
     if not api_key:
         while True:
