@@ -305,6 +305,97 @@ def read_current_config():
             pass
     return current_map
 
+# ---------------------------------------------------------------------------
+# Local model semantic tier classifier
+# Maps model families (by name pattern) to the Claude tiers they suit.
+# Uses the Ollama model name + quant tag, not just raw parameter count.
+# Each entry: (regex_pattern, frozenset_of_tier_names)
+# Patterns are checked in order; first match wins. Size fallback at the end.
+# ---------------------------------------------------------------------------
+_LOCAL_TIER_MAP = [
+    # ── Frontier / Reasoning (Opus, Mythos) ─────────────────────────────────
+    # Giant MoE or dense reasoning specialists
+    (r"deepseek-r1.*671b",                     frozenset({"opus","mythos","fable"})),
+    (r"llama.*3\.1.*405b",                     frozenset({"opus","mythos"})),
+    (r"nemotron.*340b|nemotron.*70b",          frozenset({"opus","mythos","fable"})),
+    (r"qwen.*235b|qwen.*a22b|qwen.*moe.*a22b", frozenset({"opus","mythos"})),
+    (r"mixtral.*8x22b",                        frozenset({"opus","fable"})),
+    (r"command-r-plus|command-r.*104b",        frozenset({"opus","fable"})),
+    (r"llama.*70b|qwen.*72b|qwen.*70b",        frozenset({"opus","sonnet","fable"})),
+    (r"mistral.*large|mistral.*123b",          frozenset({"opus","fable"})),
+    (r"deepseek-r1.*70b|deepseek-r1.*32b",     frozenset({"opus","sonnet"})),
+    (r"gemma[23]?.*27b",                       frozenset({"opus","sonnet"})),
+    (r"qwen.*32b|qwen.*30b",                   frozenset({"opus","sonnet"})),
+
+    # ── Coding Workhorses (Sonnet / Fable) ──────────────────────────────────
+    # Coding-specialist models outperform their size class
+    (r"qwen.*coder.*32b|qwen.*coder.*30b",     frozenset({"sonnet","fable"})),
+    (r"qwen.*coder.*14b",                      frozenset({"sonnet","haiku"})),
+    (r"deepseek-coder.*v2|deepseek-coder.*33b",frozenset({"sonnet"})),
+    (r"codellama.*34b|codellama.*70b",         frozenset({"sonnet","fable"})),
+    (r"starcoder.*15b|starcoder2.*15b",        frozenset({"sonnet"})),
+    (r"mixtral.*8x7b",                         frozenset({"sonnet","opus"})),
+    (r"phi.*4.*14b|phi[- ]?4",                 frozenset({"sonnet","haiku"})),
+    (r"mistral.*nemo|mistral.*12b",            frozenset({"sonnet","haiku"})),
+    (r"llama.*3\.3.*70b",                      frozenset({"opus","sonnet"})),
+    (r"llama.*3\.1.*8b|llama.*3\.2.*8b|llama.*3.*8b",
+                                               frozenset({"sonnet","haiku"})),
+    (r"llama.*13b|llama.*3.*13b",             frozenset({"sonnet"})),
+    (r"mistral.*7b|mistral.*instruct",         frozenset({"sonnet","haiku"})),
+    (r"gemma[23]?.*9b|gemma[23]?.*7b",         frozenset({"sonnet","haiku"})),
+    (r"qwen2\.5.*7b|qwen2.*14b",              frozenset({"sonnet","haiku"})),
+    (r"deepseek-coder.*7b|deepseek-v[23].*8b",frozenset({"haiku","sonnet"})),
+    (r"command-r(?!-plus).*35b",              frozenset({"sonnet"})),
+
+    # ── Small / Fast (Haiku) ─────────────────────────────────────────────────
+    (r"qwen.*coder.*7b|qwen.*coder.*3b",       frozenset({"haiku"})),
+    (r"phi.*3.*mini|phi.*3\.5.*mini|phi.*2",   frozenset({"haiku"})),
+    (r"gemma[23]?.*2b",                        frozenset({"haiku"})),
+    (r"llama.*3\.2.*1b|llama.*3\.2.*3b",       frozenset({"haiku"})),
+    (r"tinyllama|tiny.*llama",                 frozenset({"haiku"})),
+    (r"qwen.*0\.5b|qwen.*1\.5b",              frozenset({"haiku"})),
+    (r"smollm|smol.*lm",                       frozenset({"haiku"})),
+    (r"starcoder.*3b|starcoder.*7b",           frozenset({"haiku"})),
+    (r"codellama.*7b|codellama.*13b",          frozenset({"haiku","sonnet"})),
+    (r"deepseek-r1.*[18]b",                    frozenset({"haiku","sonnet"})),
+    (r"moondream",                             frozenset({"haiku"})),
+]
+
+# Size-based fallback tiers when no family pattern matched
+def _size_fallback_tier(param_size_str: str):
+    s = param_size_str.upper().strip()
+    def _parse_b(t):
+        try:
+            return float(re.sub(r"[^0-9.]", "", t))
+        except Exception:
+            return 0.0
+    b = _parse_b(s)
+    if "X" in s:
+        # MoE: e.g. "8x7B" → effective params ~ experts * each
+        parts = s.split("X")
+        if len(parts) == 2:
+            b = _parse_b(parts[0]) * _parse_b(parts[1])
+    if b >= 60:
+        return frozenset({"opus","fable"})
+    elif b >= 25:
+        return frozenset({"sonnet","fable"})
+    elif b >= 10:
+        return frozenset({"sonnet","haiku"})
+    elif b > 0:
+        return frozenset({"haiku"})
+    return None
+
+def _classify_local_model(model_name: str, param_size_str: str):
+    """
+    Return a frozenset of tier names this Ollama model is suitable for.
+    Checks curated family patterns first, falls back to parameter size.
+    """
+    name_lower = model_name.lower()
+    for pattern, tiers in _LOCAL_TIER_MAP:
+        if re.search(pattern, name_lower):
+            return tiers
+    return _size_fallback_tier(param_size_str) or frozenset({"sonnet","haiku"})
+
 def fetch_local_engines():
     """Detect running local inference engines (Ollama, LM Studio, vLLM)."""
     engines = []
@@ -316,8 +407,8 @@ def fetch_local_engines():
             data = json.loads(resp.read().decode())
             models = data.get("models", [])
             if models:
-                def get_ollama_ctx(model_name):
-                    """Query /api/show for a model's context length."""
+                def get_ollama_model_info(model_name):
+                    """Query /api/show for a model's context length and parameter size."""
                     try:
                         payload = json.dumps({"model": model_name}).encode()
                         show_req = urllib.request.Request(
@@ -328,37 +419,42 @@ def fetch_local_engines():
                         )
                         with urllib.request.urlopen(show_req, timeout=2) as r:
                             info_data = json.loads(r.read().decode())
-                            # num_ctx in model_info (Ollama >= 0.2) or parameters block
+                            # Context length
                             ctx = (
                                 info_data.get("model_info", {}).get("llm.context_length") or
                                 info_data.get("model_info", {}).get("context_length") or
                                 info_data.get("details", {}).get("context_length")
                             )
-                            # Also check parameters string (older Ollama builds)
                             if not ctx:
-                                params = info_data.get("parameters", "")
-                                for line in params.splitlines():
+                                params_text = info_data.get("parameters", "")
+                                for line in params_text.splitlines():
                                     if "num_ctx" in line:
                                         parts = line.split()
                                         if len(parts) >= 2 and parts[-1].isdigit():
                                             ctx = int(parts[-1])
                                             break
+                            ctx_str, supports1m = "?", False
                             if ctx:
                                 ctx = int(ctx)
                                 if ctx >= 1_000_000:
-                                    return f"{ctx // 1_000_000}M", True
+                                    ctx_str, supports1m = f"{ctx // 1_000_000}M", True
                                 elif ctx >= 1_000:
-                                    return f"{ctx // 1_000}k", ctx >= 900_000
+                                    ctx_str, supports1m = f"{ctx // 1_000}k", ctx >= 900_000
                                 else:
-                                    return str(ctx), False
+                                    ctx_str = str(ctx)
+
+                            # Parameter size string for semantic tier classification
+                            param_size_str = info_data.get("details", {}).get("parameter_size", "")
+                            return ctx_str, supports1m, param_size_str
                     except Exception:
                         pass
-                    return "?", False
+                    return "?", False, ""
 
                 ollama_models = []
                 for m in models:
                     model_name = m.get("name")
-                    ctx_str, supports1m = get_ollama_ctx(model_name)
+                    ctx_str, supports1m, param_size_str = get_ollama_model_info(model_name)
+                    tier_hint = _classify_local_model(model_name, param_size_str or "")
                     ollama_models.append({
                         "id": f"ollama/{model_name}",
                         "raw_model_id": model_name,
@@ -367,8 +463,10 @@ def fetch_local_engines():
                         "ctx_str": f"{ctx_str} Context" if ctx_str != "?" else "Local Context",
                         "supports1m": supports1m,
                         "provider": "ollama",
-                        "api_base": "http://localhost:11434"
+                        "api_base": "http://localhost:11434",
+                        "tier_hint": tier_hint,
                     })
+
                 engines.append({
                     "provider": "ollama",
                     "name": "Ollama",
@@ -582,13 +680,13 @@ def run_model_configuration():
 
         all_options = list(t["options"])
 
-        # Collect local models, group by engine
-        local_by_engine = {}
+        # Only inject local models that are appropriate for this tier
         for engine in local_engines:
             for lm in engine["models"]:
-                key = engine["name"]
-                local_by_engine.setdefault(key, []).append(lm)
-                all_options.append(lm)
+                hint = lm.get("tier_hint")
+                # If no hint (unknown model), show in sonnet/haiku as safe defaults
+                if hint is None or t["tier_name"] in hint:
+                    all_options.append(lm)
 
         # Print OpenRouter cloud options
         openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
