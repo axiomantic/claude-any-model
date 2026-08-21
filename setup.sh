@@ -7,7 +7,7 @@
 # ==============================================================================
 set -euo pipefail
 
-APP_DIR="${HOME}/.claude-openrouter-models"
+APP_DIR="${HOME}/.claude-any-model"
 VENV_DIR="${APP_DIR}/venv"
 PYTHON_TARGET="3.12"
 
@@ -59,7 +59,7 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     SCRIPT_PATH="${BASH_SOURCE[0]}"
 else
     SCRIPT_PATH="${APP_DIR}/setup.sh"
-    curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models/main/setup.sh -o "${SCRIPT_PATH}" 2>/dev/null || true
+    curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/setup.sh -o "${SCRIPT_PATH}" 2>/dev/null || true
     chmod +x "${SCRIPT_PATH}"
 fi
 
@@ -74,7 +74,7 @@ exit 0
 """
 
 # ==============================================================================
-# Claude OpenRouter & Universal Models — Python Implementation
+# Claude Any Model — Python Implementation
 # ==============================================================================
 import sys
 import os
@@ -93,11 +93,12 @@ from datetime import datetime
 VERSION = "1.3.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
-PLIST_LABEL = "com.claude-openrouter-models"
-LEGACY_PLIST_LABELS = ["com.claude-to-openrouter-proxy", "com.litellm.proxy"]
+PLIST_LABEL = "com.claude-any-model"
+LEGACY_PLIST_LABELS = ["com.claude-openrouter-models", "com.claude-to-openrouter-proxy", "com.litellm.proxy"]
 
-APP_DIR = os.path.expanduser("~/.claude-openrouter-models")
+APP_DIR = os.path.expanduser("~/.claude-any-model")
 LEGACY_APP_DIRS = [
+    os.path.expanduser("~/.claude-any-model"),
     os.path.expanduser("~/.claude-to-openrouter-proxy"),
     os.path.expanduser("~/.litellm-proxy"),
 ]
@@ -204,7 +205,7 @@ def validate_openrouter_key(api_key):
         "https://openrouter.ai/api/v1/auth/key",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Claude-OpenRouter-Models/1.3.0"
+            "User-Agent": "Claude-Any-Model/1.3.0"
         }
     )
     try:
@@ -429,7 +430,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-OpenRouter-Models/1.3.0"}
+        headers={"User-Agent": "Claude-Any-Model/1.3.0"}
     )
     catalog = {}
     try:
@@ -808,7 +809,7 @@ strict_guardrail = StrictModelGuardrail()
     with open(profile_path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2)
     
-    # Save a persistent backup copy in ~/.claude-openrouter-models
+    # Save a persistent backup copy in ~/.claude-any-model
     backup_copy = os.path.join(APP_DIR, "gateway_profile.json")
     try:
         with open(backup_copy, "w", encoding="utf-8") as f:
@@ -843,7 +844,7 @@ exec "{APP_DIR}/venv/bin/litellm" --config "$APP_DIR/config.yaml" --port {PORT} 
 
 def install_service():
     if platform.system() != "Darwin":
-        info("Non-macOS system: Launch proxy manually using ~/.claude-openrouter-models/run_proxy.sh")
+        info("Non-macOS system: Launch proxy manually using ~/.claude-any-model/run_proxy.sh")
         return
 
     launch_agents = os.path.expanduser("~/Library/LaunchAgents")
@@ -882,7 +883,7 @@ def install_service():
 
 def uninstall_service():
     check_claude_closed()
-    header("Uninstalling Claude OpenRouter Models")
+    header("Uninstalling Claude Any Model")
     if platform.system() == "Darwin" and os.path.exists(PLIST_PATH):
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
         try:
@@ -903,7 +904,7 @@ def uninstall_service():
         except Exception:
             pass
 
-    purge = safe_input("Delete proxy directory and cached virtualenv ~/.claude-openrouter-models? (y/N): ", "n").lower()
+    purge = safe_input("Delete proxy directory and cached virtualenv ~/.claude-any-model? (y/N): ", "n").lower()
     if purge in ("y", "yes"):
         if os.path.exists(APP_DIR):
             shutil.rmtree(APP_DIR)
@@ -976,7 +977,7 @@ def switch_claude_mode(target_mode="toggle"):
             except Exception as e:
                 warn(f"Could not update _meta.json: {e}")
 
-        # Keep standalone persistent backup in ~/.claude-openrouter-models
+        # Keep standalone persistent backup in ~/.claude-any-model
         if os.path.exists(state_file):
             try:
                 with open(state_file, "r", encoding="utf-8") as sf:
@@ -1017,7 +1018,7 @@ def switch_claude_mode(target_mode="toggle"):
                 except Exception:
                     pass
 
-        # Self-heal restore from ~/.claude-openrouter-models/gateway_profile.json if profile JSON was removed
+        # Self-heal restore from ~/.claude-any-model/gateway_profile.json if profile JSON was removed
         backup_profile_path = os.path.join(APP_DIR, "gateway_profile.json")
         if profile_id:
             target_profile_path = os.path.join(CLAUDE_3P_DIR, f"{profile_id}.json")
@@ -1135,7 +1136,7 @@ def post_setup_prompt():
             success("Claude Desktop launched.")
 
 def usage():
-    print(f"Claude OpenRouter Models Setup v{VERSION}", file=sys.stderr)
+    print(f"Claude Any Model Setup v{VERSION}", file=sys.stderr)
     print("Usage: setup.sh {install|models|switch|status|restart|stop|start|uninstall|version}\n", file=sys.stderr)
     print("Commands:", file=sys.stderr)
     print("  switch [mode] - Easily toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
@@ -1191,7 +1192,7 @@ def main():
     elif cmd == "uninstall":
         uninstall_service()
     elif cmd in ("version", "--version", "-v"):
-        print(f"Claude OpenRouter Models v{VERSION}")
+        print(f"Claude Any Model v{VERSION}")
     else:
         usage()
 

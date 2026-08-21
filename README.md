@@ -1,10 +1,10 @@
-# Claude OpenRouter Models
+# Claude Any Model
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-purple.svg)](https://openrouter.ai)
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
-[![Release](https://img.shields.io/github/v/release/axiomantic/claude-openrouter-models?include_prereleases&color=green)](https://github.com/axiomantic/claude-openrouter-models/releases)
+[![Release](https://img.shields.io/github/v/release/axiomantic/claude-any-model?include_prereleases&color=green)](https://github.com/axiomantic/claude-any-model/releases)
 
 Route Claude Desktop and Claude CLI requests to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, and GLM-5.2) with live token pricing shown directly in Claude's model picker.
 
@@ -35,7 +35,7 @@ Anthropic includes a **Third-Party Inference** mode in Claude Desktop designed f
 Run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-openrouter-models/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/setup.sh | bash
 ```
 
 *(Or clone the repository and run `./setup.sh install`)*
@@ -171,7 +171,7 @@ A weekly GitHub Action evaluates the live OpenRouter catalog using benchmark dat
 To enable the weekly evaluation workflow in GitHub Actions, add your OpenRouter API key as a repository secret:
 
 ```bash
-gh secret set OPENROUTER_API_KEY --repo axiomantic/claude-openrouter-models
+gh secret set OPENROUTER_API_KEY --repo axiomantic/claude-any-model
 ```
 
 *(Or configure it via the GitHub UI: **Settings > Secrets and variables > Actions > New repository secret**)*

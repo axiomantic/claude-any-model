@@ -26,7 +26,7 @@ def get_api_key():
     if key:
         return key.strip()
     
-    env_path = os.path.expanduser("~/.claude-openrouter-models/.env")
+    env_path = os.path.expanduser("~/.claude-any-model/.env")
     if os.path.exists(env_path):
         try:
             with open(env_path, "r", encoding="utf-8") as f:
@@ -242,7 +242,7 @@ Please perform web search on recent benchmarks and releases, conduct the compara
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/axiomantic/claude-openrouter-models",
+                "HTTP-Referer": "https://github.com/axiomantic/claude-any-model",
                 "X-Title": "Claude OpenRouter Models Comparative Evaluator"
             }
         )
