@@ -219,13 +219,31 @@ def validate_openrouter_key(api_key):
         warn(f"Could not verify OpenRouter key ({e}). Proceeding anyway in case of offline/firewall restrictions.")
     return True
 
-def setup_env():
+def setup_env(force=False):
     env_path = os.path.join(APP_DIR, ".env")
+    has_key = False
     if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("OPENROUTER_API_KEY=") and len(line.split("=", 1)[1].strip()) > 5:
+                        has_key = True
+                        break
+        except Exception:
+            pass
+
+    if has_key and not force:
+        return
+
+    if has_key and force:
         info(f"Existing .env file found at {env_path}.")
         choice = safe_input("Do you want to overwrite your OpenRouter API key? (y/N): ", "n")
         if choice.lower() != "y":
             return
+
+    if not has_key:
+        warn(f"No OpenRouter API key found in {env_path}.")
+        print("\033[1;36m[SETUP]\033[0m An OpenRouter API key is required for Claude Desktop Gateway mode.", file=sys.stderr)
 
     print("", file=sys.stderr)
     try:
@@ -322,6 +340,7 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
 
 def run_model_configuration():
     check_claude_closed()
+    setup_env(force=False)
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config()
 
@@ -415,11 +434,19 @@ def run_model_configuration():
             print(f"{opt_idx}) {opt['name']:<24} - {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
         custom_num = len(t["options"]) + 1
-        print(f"{custom_num}) Custom OpenRouter Model ID", file=sys.stderr)
+        custom_tag = ""
+        if matched_current_idx is None and current_model_id:
+            custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
+            matched_current_idx = custom_num
+
+        print(f"{custom_num}) Custom OpenRouter Model ID{custom_tag}", file=sys.stderr)
 
         if matched_current_idx is not None:
             default_choice = str(matched_current_idx)
-            default_hint = f"default={default_choice} (Current)"
+            if matched_current_idx == custom_num:
+                default_hint = f"default={default_choice} (Current: {current_model_id})"
+            else:
+                default_hint = f"default={default_choice} (Current)"
         else:
             default_choice = str(recommended_idx)
             default_hint = f"default={default_choice} (Recommended)"
@@ -437,7 +464,8 @@ def run_model_configuration():
             label = f"{chosen['name']} ({chosen['price_str']})"
             supports1m = chosen["supports1m"]
         else:
-            custom_id = safe_input("Enter OpenRouter model ID (e.g. org/model-name): ", t["options"][0]["id"])
+            default_custom = current_model_id if current_model_id else t["options"][0]["id"]
+            custom_id = safe_input(f"Enter OpenRouter model ID [default={default_custom}]: ", default_custom)
             item = catalog.get(custom_id)
             if item:
                 print(f"\033[1;32m[API Match]\033[0m Found {item['name']}: {item['price_str']} [{item['ctx_str']}]", file=sys.stderr)
@@ -445,11 +473,12 @@ def run_model_configuration():
                 label = f"{item['name']} ({item['price_str']})"
                 supports1m = item["supports1m"]
             else:
-                custom_label = safe_input("Enter display label with price (e.g. MyModel ($1.00/$2.00)): ", custom_id)
+                custom_label = safe_input(f"Enter display label with price (e.g. {custom_id}): ", custom_id)
                 custom_1m = safe_input("Does it support 1M context? (y/N): ", "n").lower() == "y"
                 model_id = custom_id
                 label = custom_label
                 supports1m = custom_1m
+
 
         selections.append({
             "tier": t["tier_name"],
@@ -643,6 +672,26 @@ def status_service():
         else:
             warn(f"Daemon {PLIST_LABEL} is NOT running.")
 
+    # Check .env credentials
+    env_path = os.path.join(APP_DIR, ".env")
+    has_api_key = False
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("OPENROUTER_API_KEY=") and len(line.split("=", 1)[1].strip()) > 5:
+                        has_api_key = True
+                        break
+        except Exception:
+            pass
+
+    if has_api_key:
+        success(f"OpenRouter API key is configured in {env_path}")
+    else:
+        error(f"No OpenRouter API key configured in {env_path}!")
+        print("\033[1;31m[CRITICAL]\033[0m Claude Desktop will fail with 401 'No cookie auth credentials found' until an API key is saved.", file=sys.stderr)
+        print("Run \033[1;36m./setup.sh install\033[0m to enter and save your OpenRouter API key.", file=sys.stderr)
+
     print("", file=sys.stderr)
     info(f"Testing endpoint connectivity on port {PORT}...")
     is_alive = False
@@ -662,6 +711,7 @@ def status_service():
         success(f"Proxy is active and healthy on http://127.0.0.1:{PORT}")
     else:
         warn(f"Could not verify liveliness on http://127.0.0.1:{PORT}. Check logs at {APP_DIR}/logs/litellm.err.log")
+
 
     print("", file=sys.stderr)
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")

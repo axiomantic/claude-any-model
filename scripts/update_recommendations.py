@@ -160,12 +160,19 @@ Anthropic Target Aliases:
 
 Instructions:
 1. Use online web search to research recent benchmark rankings (LiveBench, SWE-bench Verified, Arena Elo, Chatbot Arena, Artificial Analysis) and recent major releases (OpenAI, Anthropic, DeepSeek, Moonshot/Kimi, Zhipu/GLM, Qwen/Alibaba, Google, Meta, etc.).
-2. For EACH tier, compare the CURRENT lineup in setup.sh vs your PROPOSED updated lineup:
+2. PRICE DIVERSITY REQUIREMENT:
+   Do NOT select only top expensive models. For EACH tier, curate a balanced spectrum across the 4-5 options:
+   - Budget / High-Economy Option: Lowest possible token price (e.g. sub-$0.10/M for Haiku/Sonnet, sub-$1.50/M MoE for Opus/Fable).
+   - Value Workhorse (Default/Recommended): Optimal benchmark score per dollar.
+   - High-Throughput / Specialist: Fast, reliable tool calling, SWE-bench coding leader.
+   - Frontier Ceiling Option: Highest capability ceiling for users prioritizing maximum reasoning.
+3. For EACH tier, compare the CURRENT lineup in setup.sh vs your PROPOSED updated lineup:
    - Identify which models are RETAINED, which models are REPLACED/SWAPPED OUT, and which new models are ADDED.
    - For every swap/change, provide the specific price delta ($In/$Out difference and % change) and benchmark/architectural justification.
    - Designate 1 model per tier as 'is_recommended': true. If the recommended model is different from the current one, explain why.
-3. Provide an executive summary with cost savings and performance tradeoff matrix.
-4. Output MUST be strictly valid JSON conforming to the schema below.
+4. Provide an executive summary with cost savings and performance tradeoff matrix.
+5. Output MUST be strictly valid JSON conforming to the schema below.
+
 
 JSON Format Schema:
 {{
