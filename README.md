@@ -86,10 +86,16 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 ---
 
-## ✨ Features
+## 🤖 Automated Weekly Recommender (GitHub Actions)
 
-* **⚡ Real-Time API Pricing:** Queries `https://openrouter.ai/api/v1/models` dynamically for up-to-date pricing and context window sizes.
-* **🏷️ In-App Pricing Labels:** Displays prices in Claude's model picker (e.g. `Kimi K3 ($3.00/$15.00) [1M]`).
-* **🔄 Background Daemon:** Managed via macOS launchd (`com.claude-openrouter-models`).
+A weekly GitHub Action evaluates the live OpenRouter catalog using an LLM with online web search grounding to identify new model releases, benchmark shifts (SWE-bench, LiveBench, Chatbot Arena), and pricing changes, automatically proposing PRs with updated tier recommendations.
 
-* **🤖 Weekly Catalog Scans:** A weekly GitHub Action monitors OpenRouter releases, evaluates price shifts, and proposes updated recommendations via PRs.
+### Configuring the Repository Secret
+To enable the weekly evaluation workflow in GitHub Actions, add your OpenRouter API key as a repository secret:
+
+```bash
+gh secret set OPENROUTER_API_KEY --repo axiomantic/claude-openrouter-models
+```
+
+*(Or configure it via the GitHub UI: **Settings > Secrets and variables > Actions > New repository secret**)*
+
