@@ -305,234 +305,73 @@ def read_current_config():
             pass
     return current_map
 
-# ---------------------------------------------------------------------------
-# Local model semantic tier classifier
-# Maps model families (by name pattern) to the Claude tiers they suit.
-# Uses the Ollama model name + quant tag, not just raw parameter count.
-# Each entry: (regex_pattern, frozenset_of_tier_names)
-# Patterns are checked in order; first match wins. Size fallback at the end.
-# ---------------------------------------------------------------------------
-_LOCAL_TIER_MAP = [
-    # ── Frontier / Reasoning (Opus, Mythos) ─────────────────────────────────
-    # Giant MoE or dense reasoning specialists
-    (r"deepseek-r1.*671b",                     frozenset({"opus","mythos","fable"})),
-    (r"llama.*3\.1.*405b",                     frozenset({"opus","mythos"})),
-    (r"nemotron.*340b|nemotron.*70b",          frozenset({"opus","mythos","fable"})),
-    (r"qwen.*235b|qwen.*a22b|qwen.*moe.*a22b", frozenset({"opus","mythos"})),
-    (r"mixtral.*8x22b",                        frozenset({"opus","fable"})),
-    (r"command-r-plus|command-r.*104b",        frozenset({"opus","fable"})),
-    (r"llama.*70b|qwen.*72b|qwen.*70b",        frozenset({"opus","sonnet","fable"})),
-    (r"mistral.*large|mistral.*123b",          frozenset({"opus","fable"})),
-    (r"deepseek-r1.*70b|deepseek-r1.*32b",     frozenset({"opus","sonnet"})),
-    (r"gemma[23]?.*27b",                       frozenset({"opus","sonnet"})),
-    (r"qwen.*32b|qwen.*30b",                   frozenset({"opus","sonnet"})),
-
-    # ── Coding Workhorses (Sonnet / Fable) ──────────────────────────────────
-    # Coding-specialist models outperform their size class
-    (r"qwen.*coder.*32b|qwen.*coder.*30b",     frozenset({"sonnet","fable"})),
-    (r"qwen.*coder.*14b",                      frozenset({"sonnet","haiku"})),
-    (r"deepseek-coder.*v2|deepseek-coder.*33b",frozenset({"sonnet"})),
-    (r"codellama.*34b|codellama.*70b",         frozenset({"sonnet","fable"})),
-    (r"starcoder.*15b|starcoder2.*15b",        frozenset({"sonnet"})),
-    (r"mixtral.*8x7b",                         frozenset({"sonnet","opus"})),
-    (r"phi.*4.*14b|phi[- ]?4",                 frozenset({"sonnet","haiku"})),
-    (r"mistral.*nemo|mistral.*12b",            frozenset({"sonnet","haiku"})),
-    (r"llama.*3\.3.*70b",                      frozenset({"opus","sonnet"})),
-    (r"llama.*3\.1.*8b|llama.*3\.2.*8b|llama.*3.*8b",
-                                               frozenset({"sonnet","haiku"})),
-    (r"llama.*13b|llama.*3.*13b",             frozenset({"sonnet"})),
-    (r"mistral.*7b|mistral.*instruct",         frozenset({"sonnet","haiku"})),
-    (r"gemma[23]?.*9b|gemma[23]?.*7b",         frozenset({"sonnet","haiku"})),
-    (r"qwen2\.5.*7b|qwen2.*14b",              frozenset({"sonnet","haiku"})),
-    (r"deepseek-coder.*7b|deepseek-v[23].*8b",frozenset({"haiku","sonnet"})),
-    (r"command-r(?!-plus).*35b",              frozenset({"sonnet"})),
-
-    # ── Small / Fast (Haiku) ─────────────────────────────────────────────────
-    (r"qwen.*coder.*7b|qwen.*coder.*3b",       frozenset({"haiku"})),
-    (r"phi.*3.*mini|phi.*3\.5.*mini|phi.*2",   frozenset({"haiku"})),
-    (r"gemma[23]?.*2b",                        frozenset({"haiku"})),
-    (r"llama.*3\.2.*1b|llama.*3\.2.*3b",       frozenset({"haiku"})),
-    (r"tinyllama|tiny.*llama",                 frozenset({"haiku"})),
-    (r"qwen.*0\.5b|qwen.*1\.5b",              frozenset({"haiku"})),
-    (r"smollm|smol.*lm",                       frozenset({"haiku"})),
-    (r"starcoder.*3b|starcoder.*7b",           frozenset({"haiku"})),
-    (r"codellama.*7b|codellama.*13b",          frozenset({"haiku","sonnet"})),
-    (r"deepseek-r1.*[18]b",                    frozenset({"haiku","sonnet"})),
-    (r"moondream",                             frozenset({"haiku"})),
-]
-
-# Size-based fallback tiers when no family pattern matched
-def _size_fallback_tier(param_size_str: str):
-    s = param_size_str.upper().strip()
-    def _parse_b(t):
-        try:
-            return float(re.sub(r"[^0-9.]", "", t))
-        except Exception:
-            return 0.0
-    b = _parse_b(s)
-    if "X" in s:
-        # MoE: e.g. "8x7B" → effective params ~ experts * each
-        parts = s.split("X")
-        if len(parts) == 2:
-            b = _parse_b(parts[0]) * _parse_b(parts[1])
-    if b >= 60:
-        return frozenset({"opus","fable"})
-    elif b >= 25:
-        return frozenset({"sonnet","fable"})
-    elif b >= 10:
-        return frozenset({"sonnet","haiku"})
-    elif b > 0:
-        return frozenset({"haiku"})
-    return None
-
-def _classify_local_model(model_name: str, param_size_str: str):
-    """
-    Return a frozenset of tier names this Ollama model is suitable for.
-    Checks curated family patterns first, falls back to parameter size.
-    """
-    name_lower = model_name.lower()
-    for pattern, tiers in _LOCAL_TIER_MAP:
-        if re.search(pattern, name_lower):
-            return tiers
-    return _size_fallback_tier(param_size_str) or frozenset({"sonnet","haiku"})
-
 def fetch_local_engines():
-    """Detect running local inference engines (Ollama, LM Studio, vLLM)."""
-    engines = []
+    """Return sets of installed model name prefixes for each local engine."""
+    result = {"ollama": set(), "lmstudio": set(), "vllm": set()}
 
-    # 1. Ollama (Default: http://localhost:11434)
+    # Ollama
     try:
         req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "Claude-Models-Checker"})
         with urllib.request.urlopen(req, timeout=0.8) as resp:
-            data = json.loads(resp.read().decode())
-            models = data.get("models", [])
-            if models:
-                def get_ollama_model_info(model_name):
-                    """Query /api/show for a model's context length and parameter size."""
-                    try:
-                        payload = json.dumps({"model": model_name}).encode()
-                        show_req = urllib.request.Request(
-                            "http://localhost:11434/api/show",
-                            data=payload,
-                            headers={"Content-Type": "application/json", "User-Agent": "Claude-Models-Checker"},
-                            method="POST"
-                        )
-                        with urllib.request.urlopen(show_req, timeout=2) as r:
-                            info_data = json.loads(r.read().decode())
-                            # Context length
-                            ctx = (
-                                info_data.get("model_info", {}).get("llm.context_length") or
-                                info_data.get("model_info", {}).get("context_length") or
-                                info_data.get("details", {}).get("context_length")
-                            )
-                            if not ctx:
-                                params_text = info_data.get("parameters", "")
-                                for line in params_text.splitlines():
-                                    if "num_ctx" in line:
-                                        parts = line.split()
-                                        if len(parts) >= 2 and parts[-1].isdigit():
-                                            ctx = int(parts[-1])
-                                            break
-                            ctx_str, supports1m = "?", False
-                            if ctx:
-                                ctx = int(ctx)
-                                if ctx >= 1_000_000:
-                                    ctx_str, supports1m = f"{ctx // 1_000_000}M", True
-                                elif ctx >= 1_000:
-                                    ctx_str, supports1m = f"{ctx // 1_000}k", ctx >= 900_000
-                                else:
-                                    ctx_str = str(ctx)
-
-                            # Parameter size string for semantic tier classification
-                            param_size_str = info_data.get("details", {}).get("parameter_size", "")
-                            return ctx_str, supports1m, param_size_str
-                    except Exception:
-                        pass
-                    return "?", False, ""
-
-                ollama_models = []
-                for m in models:
-                    model_name = m.get("name")
-                    ctx_str, supports1m, param_size_str = get_ollama_model_info(model_name)
-                    tier_hint = _classify_local_model(model_name, param_size_str or "")
-                    ollama_models.append({
-                        "id": f"ollama/{model_name}",
-                        "raw_model_id": model_name,
-                        "name": f"{model_name} (Ollama Local)",
-                        "price_str": "$0.00 / Local",
-                        "ctx_str": f"{ctx_str} Context" if ctx_str != "?" else "Local Context",
-                        "supports1m": supports1m,
-                        "provider": "ollama",
-                        "api_base": "http://localhost:11434",
-                        "tier_hint": tier_hint,
-                    })
-
-                engines.append({
-                    "provider": "ollama",
-                    "name": "Ollama",
-                    "api_base": "http://localhost:11434",
-                    "models": ollama_models
-                })
+            for m in json.loads(resp.read().decode()).get("models", []):
+                result["ollama"].add(m.get("name", ""))
     except Exception:
         pass
 
-    # 2. LM Studio (Default: http://localhost:1234/v1)
+    # LM Studio
     try:
         req = urllib.request.Request("http://localhost:1234/v1/models", headers={"User-Agent": "Claude-Models-Checker"})
         with urllib.request.urlopen(req, timeout=0.8) as resp:
-            data = json.loads(resp.read().decode())
-            models = data.get("data", [])
-            if models:
-                engines.append({
-                    "provider": "lmstudio",
-                    "name": "LM Studio",
-                    "api_base": "http://localhost:1234/v1",
-                    "models": [
-                        {
-                            "id": f"openai/{m.get('id')}",
-                            "raw_model_id": m.get("id"),
-                            "name": f"{m.get('id')} (LM Studio Local)",
-                            "price_str": "$0.00 / Local",
-                            "ctx_str": "Local Context",
-                            "supports1m": False,
-                            "provider": "openai",
-                            "api_base": "http://localhost:1234/v1"
-                        }
-                        for m in models
-                    ]
-                })
+            for m in json.loads(resp.read().decode()).get("data", []):
+                result["lmstudio"].add(m.get("id", ""))
     except Exception:
         pass
 
-    # 3. vLLM / llama.cpp / custom local server (Default: http://localhost:8000/v1)
+    # vLLM / llama.cpp
     try:
         req = urllib.request.Request("http://localhost:8000/v1/models", headers={"User-Agent": "Claude-Models-Checker"})
         with urllib.request.urlopen(req, timeout=0.8) as resp:
-            data = json.loads(resp.read().decode())
-            models = data.get("data", [])
-            if models:
-                engines.append({
-                    "provider": "vllm",
-                    "name": "vLLM / Local Server",
-                    "api_base": "http://localhost:8000/v1",
-                    "models": [
-                        {
-                            "id": f"openai/{m.get('id')}",
-                            "raw_model_id": m.get("id"),
-                            "name": f"{m.get('id')} (vLLM Local)",
-                            "price_str": "$0.00 / Local",
-                            "ctx_str": "Local Context",
-                            "supports1m": False,
-                            "provider": "openai",
-                            "api_base": "http://localhost:8000/v1"
-                        }
-                        for m in models
-                    ]
-                })
+            for m in json.loads(resp.read().decode()).get("data", []):
+                result["vllm"].add(m.get("id", ""))
     except Exception:
         pass
 
-    return engines
+    return result
+
+def get_ollama_ctx(model_name):
+    """Query Ollama /api/show for a model's context length."""
+    try:
+        payload = json.dumps({"model": model_name}).encode()
+        req = urllib.request.Request(
+            "http://localhost:11434/api/show",
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "Claude-Models-Checker"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=2) as r:
+            info_data = json.loads(r.read().decode())
+            ctx = (
+                info_data.get("model_info", {}).get("llm.context_length") or
+                info_data.get("model_info", {}).get("context_length") or
+                info_data.get("details", {}).get("context_length")
+            )
+            if not ctx:
+                for line in info_data.get("parameters", "").splitlines():
+                    if "num_ctx" in line:
+                        parts = line.split()
+                        if len(parts) >= 2 and parts[-1].isdigit():
+                            ctx = int(parts[-1])
+                            break
+            if ctx:
+                ctx = int(ctx)
+                if ctx >= 1_000_000:
+                    return f"{ctx // 1_000_000}M Context", True
+                elif ctx >= 1_000:
+                    return f"{ctx // 1_000}k Context", ctx >= 900_000
+    except Exception:
+        pass
+    return "Local Context", False
+
 
 def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
@@ -599,11 +438,33 @@ def run_model_configuration():
     setup_env(force=False)
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config()
-    local_engines = fetch_local_engines()
+    installed = fetch_local_engines()  # dict: {"ollama": set(), "lmstudio": set(), "vllm": set()}
 
-    if local_engines:
-        engine_summary = ", ".join([f"{e['name']} ({len(e['models'])} models)" for e in local_engines])
-        info(f"Discovered local inference engine(s): \033[1;32m{engine_summary}\033[0m")
+    ollama_installed = installed.get("ollama", set())
+    if ollama_installed:
+        info(f"Ollama: {len(ollama_installed)} model(s) installed")
+
+    # Helper: build an Ollama option entry if the model is installed
+    def ollama_opt(model_id, label, ctx_str="Local Context", supports1m=False, is_recommended=False):
+        # Match against installed names (exact or prefix, e.g. "qwen3-coder:32b" or "qwen3-coder")
+        matched = next((n for n in ollama_installed if n == model_id or n.startswith(model_id + ":")), None)
+        if not matched:
+            return None
+        ctx_display, s1m = get_ollama_ctx(matched)
+        return {
+            "id": f"ollama/{matched}",
+            "raw_model_id": matched,
+            "name": label,
+            "price_str": "$0.00 / Local",
+            "ctx_str": ctx_display,
+            "supports1m": s1m or supports1m,
+            "provider": "ollama",
+            "api_base": "http://localhost:11434",
+            "is_recommended": is_recommended,
+        }
+
+    def ollama_opts(entries):
+        return [o for o in (ollama_opt(*e) if not isinstance(e, dict) else e for e in entries) if o]
 
     tiers = [
         {
@@ -616,7 +477,15 @@ def run_model_configuration():
                 get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro (0813 GA)", "$1.19/$3.56", "1M Context", True),
                 get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
-            ]
+            ],
+            "ollama_options": ollama_opts([
+                ("llama3.3", "llama3.3:70b", "Local Context", True, True),
+                ("qwen2.5", "qwen2.5:72b", "Local Context", True),
+                ("deepseek-r1", "deepseek-r1:70b", "Local Context", True),
+                ("mixtral:8x22b", "mixtral:8x22b", "Local Context", False),
+                ("nemotron", "nemotron:70b", "Local Context", True),
+                ("command-r-plus", "command-r-plus:104b", "Local Context", True),
+            ]),
         },
         {
             "tier_name": "sonnet",
@@ -627,7 +496,18 @@ def run_model_configuration():
                 get_model_entry(catalog, "anthropic/claude-sonnet-4", "Claude Sonnet 4", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-chat", "DeepSeek V3", "$0.26/$1.03", "163k Context", False),
                 get_model_entry(catalog, "qwen/qwen3-coder-flash", "Qwen3 Coder Flash", "$0.20/$0.97", "1M Context", True),
-            ]
+            ],
+            "ollama_options": ollama_opts([
+                ("qwen2.5-coder:32b", "qwen2.5-coder:32b", "Local Context", False, True),
+                ("qwen2.5-coder:14b", "qwen2.5-coder:14b", "Local Context", False),
+                ("deepseek-coder-v2", "deepseek-coder-v2:16b", "Local Context", False),
+                ("codellama:34b", "codellama:34b", "Local Context", False),
+                ("mixtral:8x7b", "mixtral:8x7b", "Local Context", False),
+                ("mistral-nemo", "mistral-nemo:12b", "Local Context", False),
+                ("llama3.1:8b", "llama3.1:8b", "Local Context", False),
+                ("gemma2:9b", "gemma2:9b", "Local Context", False),
+                ("phi4", "phi4:14b", "Local Context", False),
+            ]),
         },
         {
             "tier_name": "haiku",
@@ -638,7 +518,17 @@ def run_model_configuration():
                 get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
                 get_model_entry(catalog, "qwen/qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "$0.07/$0.28", "262k Context", False),
                 get_model_entry(catalog, "openai/gpt-5.6-luna", "GPT-5.6 Luna", "$0.20/$1.20", "1M Context", True),
-            ]
+            ],
+            "ollama_options": ollama_opts([
+                ("qwen2.5-coder:7b", "qwen2.5-coder:7b", "Local Context", False, True),
+                ("deepseek-coder:6.7b", "deepseek-coder:6.7b", "Local Context", False),
+                ("phi3:mini", "phi3:mini", "Local Context", False),
+                ("phi3.5:mini", "phi3.5:mini", "Local Context", False),
+                ("gemma2:2b", "gemma2:2b", "Local Context", False),
+                ("llama3.2:3b", "llama3.2:3b", "Local Context", False),
+                ("qwen2.5:7b", "qwen2.5:7b", "Local Context", False),
+                ("mistral:7b", "mistral:7b", "Local Context", False),
+            ]),
         },
         {
             "tier_name": "fable",
@@ -649,7 +539,13 @@ def run_model_configuration():
                 get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro", "$1.19/$3.56", "1M Context", True),
                 get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
-            ]
+            ],
+            "ollama_options": ollama_opts([
+                ("qwen2.5-coder:32b", "qwen2.5-coder:32b", "Local Context", False, True),
+                ("llama3.3", "llama3.3:70b", "Local Context", True),
+                ("deepseek-r1:32b", "deepseek-r1:32b", "Local Context", False),
+                ("codellama:34b", "codellama:34b", "Local Context", False),
+            ]),
         },
         {
             "tier_name": "mythos",
@@ -660,14 +556,19 @@ def run_model_configuration():
                 get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3 Ultra", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro-0813", "DeepSeek V4 Pro (Max)", "$1.19/$3.56", "1M Context", True),
                 get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2 (Reasoning)", "$0.97/$3.04", "1M Context", True),
-            ]
-        }
+            ],
+            "ollama_options": ollama_opts([
+                ("deepseek-r1:671b", "deepseek-r1:671b", "Local Context", True, True),
+                ("llama3.1:405b", "llama3.1:405b", "Local Context", True),
+                ("nemotron:340b", "nemotron:340b", "Local Context", True),
+            ]),
+        },
     ]
 
     header(f"Configure Inference Models for Claude Desktop (Curated: {MODELS_LAST_REVISITED})")
     print(f"\033[1;34m[INFO]\033[0m Curated model list last revisited: \033[1;36m{MODELS_LAST_REVISITED}\033[0m", file=sys.stderr)
     print("Select your target model for each Anthropic family tier.", file=sys.stderr)
-    print("Supports OpenRouter cloud models as well as local engines (Ollama, LM Studio, vLLM).\n", file=sys.stderr)
+    print("Supports OpenRouter cloud models and local engines (Ollama, LM Studio, vLLM).\n", file=sys.stderr)
 
     selections = []
 
@@ -678,17 +579,10 @@ def run_model_configuration():
         matched_current_idx = None
         recommended_idx = 1
 
-        all_options = list(t["options"])
+        # OpenRouter curated options + matching installed Ollama models
+        all_options = list(t["options"]) + list(t.get("ollama_options", []))
 
-        # Only inject local models that are appropriate for this tier
-        for engine in local_engines:
-            for lm in engine["models"]:
-                hint = lm.get("tier_hint")
-                # If no hint (unknown model), show in sonnet/haiku as safe defaults
-                if hint is None or t["tier_name"] in hint:
-                    all_options.append(lm)
-
-        # Print OpenRouter cloud options
+        # Print OpenRouter cloud section
         openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
         if openrouter_opts:
             print(f"  \033[1;34m☁  OpenRouter\033[0m", file=sys.stderr)
@@ -700,7 +594,6 @@ def run_model_configuration():
                 matched_current_idx = opt_idx
             if opt.get("is_recommended"):
                 recommended_idx = opt_idx
-
             tags = []
             if opt.get("is_recommended"):
                 tags.append("\033[1;32m(Recommended)\033[0m")
@@ -709,36 +602,25 @@ def run_model_configuration():
             tag_str = f"  {' '.join(tags)}" if tags else ""
             print(f"  {opt_idx}) {opt['name']:<26} {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
-        # Print local engine options, grouped by engine name
-        printed_engines = set()
+        # Print Ollama curated section (only installed models)
+        ollama_opts_for_tier = [o for o in all_options if o.get("provider") == "ollama"]
+        if ollama_opts_for_tier:
+            print(f"  \033[1;36m⬡  Ollama (Local)\033[0m", file=sys.stderr)
         for opt_idx, opt in enumerate(all_options, 1):
-            prov = opt.get("provider")
-            if prov not in ("ollama", "lmstudio", "vllm", "openai") or opt.get("api_base") is None:
+            if opt.get("provider") != "ollama":
                 continue
-            engine_name = opt.get("name", "").replace(f" ({opt.get('raw_model_id', '')})", "").strip()
-            # Derive engine header from name
-            if "Ollama" in opt.get("name", ""):
-                header_key = "Ollama"
-            elif "LM Studio" in opt.get("name", ""):
-                header_key = "LM Studio"
-            elif "vLLM" in opt.get("name", ""):
-                header_key = "vLLM"
-            else:
-                header_key = prov.capitalize()
-            if header_key not in printed_engines:
-                print(f"  \033[1;36m⬡  {header_key} (Local)\033[0m", file=sys.stderr)
-                printed_engines.add(header_key)
-
             is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
             if is_current:
                 matched_current_idx = opt_idx
+            if opt.get("is_recommended") and matched_current_idx is None:
+                recommended_idx = opt_idx
             tags = []
+            if opt.get("is_recommended"):
+                tags.append("\033[1;32m(Recommended)\033[0m")
             if is_current:
                 tags.append("\033[1;33m[CURRENT]\033[0m")
             tag_str = f"  {' '.join(tags)}" if tags else ""
-            raw_display = opt.get("raw_model_id", opt["id"])
-            ctx_display = opt.get("ctx_str", "Local Context")
-            print(f"  {opt_idx}) {raw_display:<26} $0.00 / Local   [{ctx_display}]{tag_str}", file=sys.stderr)
+            print(f"  {opt_idx}) {opt['raw_model_id']:<26} $0.00 / Local   [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
         custom_openrouter_num = len(all_options) + 1
         custom_local_num = len(all_options) + 2
