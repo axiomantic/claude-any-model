@@ -648,12 +648,12 @@ uninstall_service() {
 status_service() {
     header "Proxy & Claude 3P Status"
     info "Curated model recommendations last revisited: ${MODELS_LAST_REVISITED}"
-    if launchctl list | grep -q "${PLIST_LABEL}"; then
+    if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
         success "Daemon ${PLIST_LABEL} (v${VERSION}) is RUNNING."
     else
         local found_legacy=false
         for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-            if launchctl list | grep -q "${legacy_label}"; then
+            if launchctl list "${legacy_label}" >/dev/null 2>&1; then
                 warn "Legacy daemon ${legacy_label} is running. Run './setup.sh restart' to migrate."
                 found_legacy=true
                 break
@@ -739,16 +739,17 @@ case "${1:-install}" in
         ensure_dirs
         run_model_configuration
         local restart_needed=false
-        if launchctl list | grep -q "${PLIST_LABEL}"; then
+        if launchctl list "${PLIST_LABEL}" >/dev/null 2>&1; then
             restart_needed=true
         else
             for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
-                if launchctl list | grep -q "${legacy_label}"; then
+                if launchctl list "${legacy_label}" >/dev/null 2>&1; then
                     restart_needed=true
                     break
                 fi
             done
         fi
+
         if [ "$restart_needed" = true ]; then
             info "Restarting proxy to apply new YAML configuration..."
             for legacy_label in "${LEGACY_PLIST_LABELS[@]}"; do
