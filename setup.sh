@@ -548,8 +548,32 @@ def run_model_configuration():
         })
         print("", file=sys.stderr)
 
-    # 1. Write LiteLLM config.yaml
+    # 1. Write Strict Guardrail & LiteLLM config.yaml
     os.makedirs(APP_DIR, exist_ok=True)
+    allowed_models = [s["claude_name"] for s in selections]
+
+    guardrail_py_path = os.path.join(APP_DIR, "guardrail.py")
+    guardrail_code = f"""# Strict Model Guardrail - Blocks any request using unconfigured models
+from litellm.integrations.custom_logger import CustomLogger
+from fastapi import HTTPException
+
+ALLOWED_MODELS = set({json.dumps(allowed_models)})
+
+class StrictModelGuardrail(CustomLogger):
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type, **kwargs):
+        requested_model = data.get("model")
+        if requested_model and requested_model not in ALLOWED_MODELS:
+            raise HTTPException(
+                status_code=403,
+                detail=f"[Strict Guardrail] Model '{{requested_model}}' is not permitted. Only configured models are allowed: {{sorted(list(ALLOWED_MODELS))}}"
+            )
+        return data
+
+strict_guardrail = StrictModelGuardrail()
+"""
+    with open(guardrail_py_path, "w", encoding="utf-8") as f:
+        f.write(guardrail_code)
+
     config_yaml_path = os.path.join(APP_DIR, "config.yaml")
     if os.path.exists(config_yaml_path):
         backup_yaml = f"{config_yaml_path}.bak.{int(datetime.now().timestamp())}"
@@ -566,12 +590,16 @@ def run_model_configuration():
         yaml_lines.append(f"    litellm_params:")
         yaml_lines.append(f"      model: openrouter/{s['model_id']}")
         yaml_lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY\n")
+    yaml_lines.append("litellm_settings:")
+    yaml_lines.append("  drop_params: true")
+    yaml_lines.append("  callbacks:")
+    yaml_lines.append("    - guardrail.strict_guardrail\n")
     yaml_lines.append("general_settings:")
     yaml_lines.append("  master_key: dummy-key\n")
 
     with open(config_yaml_path, "w", encoding="utf-8") as f:
         f.write("\n".join(yaml_lines))
-    success(f"Generated LiteLLM config at: {config_yaml_path}")
+    success(f"Generated LiteLLM config at: {config_yaml_path} (Strict model blocking: ACTIVE)")
 
     # 2. Write Claude 3P configLibrary JSON
     os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
@@ -636,6 +664,7 @@ def create_runner_script():
     runner = os.path.join(APP_DIR, "run_proxy.sh")
     content = f"""#!/usr/bin/env bash
 DIR="{APP_DIR}"
+export PYTHONPATH="$DIR:${{PYTHONPATH:-}}"
 if [ -f "$DIR/.env" ]; then
     set -a
     source "$DIR/.env"
@@ -646,6 +675,7 @@ exec "$DIR/venv/bin/litellm" --config "$DIR/config.yaml" --port "${{PORT:-{PORT}
     with open(runner, "w", encoding="utf-8") as f:
         f.write(content)
     os.chmod(runner, 0o755)
+
 
 def install_service():
     if platform.system() != "Darwin":
