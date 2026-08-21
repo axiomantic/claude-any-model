@@ -98,7 +98,7 @@ LEGACY_PLIST_LABELS = ["com.claude-openrouter-models", "com.claude-to-openrouter
 
 APP_DIR = os.path.expanduser("~/.claude-any-model")
 LEGACY_APP_DIRS = [
-    os.path.expanduser("~/.claude-any-model"),
+    os.path.expanduser("~/.claude-openrouter-models"),
     os.path.expanduser("~/.claude-to-openrouter-proxy"),
     os.path.expanduser("~/.litellm-proxy"),
 ]
@@ -225,6 +225,7 @@ def find_existing_api_key():
 
     search_files = [
         os.path.join(APP_DIR, ".env"),
+        os.path.expanduser("~/.claude-openrouter-models/.env"),
         os.path.expanduser("~/.claude-to-openrouter-proxy/.env"),
         os.path.expanduser("~/.litellm-proxy/.env"),
         os.path.expanduser("~/.zshrc"),

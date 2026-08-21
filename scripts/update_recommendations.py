@@ -243,7 +243,7 @@ Please perform web search on recent benchmarks and releases, conduct the compara
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://github.com/axiomantic/claude-any-model",
-                "X-Title": "Claude OpenRouter Models Comparative Evaluator"
+                "X-Title": "Claude Any Model Comparative Evaluator"
             }
         )
 
