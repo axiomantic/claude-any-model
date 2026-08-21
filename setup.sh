@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Script and Service Version
 VERSION="1.2.0"
-MODELS_LAST_REVISITED="2026-08-21"
+MODELS_LAST_REVISITED = "2026-08-21"
 
 
 # Configuration paths
@@ -204,13 +204,8 @@ run_model_configuration() {
     check_claude_closed
 
     local helper_script="${APP_DIR}/configure_proxy.py"
-    if [[ -n "${SCRIPT_DIR:-}" && -f "${SCRIPT_DIR}/configure_proxy.py" ]]; then
-        cp "${SCRIPT_DIR}/configure_proxy.py" "${helper_script}"
-    fi
+    cat <<'PYEOF' > "${helper_script}"
 
-    # If helper script doesn't exist (e.g. run via curl piped to bash), generate it inline
-    if [[ ! -f "${helper_script}" ]]; then
-        cat <<'PYEOF' > "${helper_script}"
 #!/usr/bin/env python3
 """
 Claude to OpenRouter Proxy - Interactive Tier & Model Configuration
@@ -562,8 +557,7 @@ if __name__ == "__main__":
         print("\n\033[1;33m[ABORTED]\033[0m Configuration cancelled by user.", file=sys.stderr)
         sys.exit(130)
 PYEOF
-        chmod +x "${helper_script}"
-    fi
+    chmod +x "${helper_script}"
 
     # Execute Python configuration with TTY stdin redirection if available
     if [ ! -t 0 ] && [ -e /dev/tty ]; then
@@ -572,6 +566,7 @@ PYEOF
         python3 "${helper_script}" "${APP_DIR}" "${CLAUDE_3P_DIR}" "${PORT}" || exit $?
     fi
 }
+
 
 
 

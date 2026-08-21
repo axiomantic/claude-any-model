@@ -150,23 +150,7 @@ def main():
     print(f"[SUCCESS] Wrote recommendations report to {report_file}")
 
     if apply_mode:
-        print(f"[INFO] Applying updated revisit timestamp ({today_str}) to codebase...")
-        # Update configure_proxy.py timestamp
-        cfg_path = "configure_proxy.py"
-        if os.path.exists(cfg_path):
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            import re
-            updated_content = re.sub(
-                r'MODELS_LAST_REVISITED\s*=\s*"[^"]+"',
-                f'MODELS_LAST_REVISITED = "{today_str}"',
-                content
-            )
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                f.write(updated_content)
-            print(f"[SUCCESS] Updated {cfg_path} with {today_str}")
-
-        # Update setup.sh timestamp
+        print(f"[INFO] Applying updated revisit timestamp ({today_str}) to setup.sh...")
         setup_path = "setup.sh"
         if os.path.exists(setup_path):
             with open(setup_path, "r", encoding="utf-8") as f:
@@ -177,9 +161,15 @@ def main():
                 f'MODELS_LAST_REVISITED="{today_str}"',
                 content
             )
+            updated_content = re.sub(
+                r'MODELS_LAST_REVISITED\s*=\s*"[^"]+"',
+                f'MODELS_LAST_REVISITED = "{today_str}"',
+                updated_content
+            )
             with open(setup_path, "w", encoding="utf-8") as f:
                 f.write(updated_content)
             print(f"[SUCCESS] Updated {setup_path} with {today_str}")
 
 if __name__ == "__main__":
     main()
+
