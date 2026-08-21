@@ -316,23 +316,64 @@ def fetch_local_engines():
             data = json.loads(resp.read().decode())
             models = data.get("models", [])
             if models:
+                def get_ollama_ctx(model_name):
+                    """Query /api/show for a model's context length."""
+                    try:
+                        payload = json.dumps({"model": model_name}).encode()
+                        show_req = urllib.request.Request(
+                            "http://localhost:11434/api/show",
+                            data=payload,
+                            headers={"Content-Type": "application/json", "User-Agent": "Claude-Models-Checker"},
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(show_req, timeout=2) as r:
+                            info_data = json.loads(r.read().decode())
+                            # num_ctx in model_info (Ollama >= 0.2) or parameters block
+                            ctx = (
+                                info_data.get("model_info", {}).get("llm.context_length") or
+                                info_data.get("model_info", {}).get("context_length") or
+                                info_data.get("details", {}).get("context_length")
+                            )
+                            # Also check parameters string (older Ollama builds)
+                            if not ctx:
+                                params = info_data.get("parameters", "")
+                                for line in params.splitlines():
+                                    if "num_ctx" in line:
+                                        parts = line.split()
+                                        if len(parts) >= 2 and parts[-1].isdigit():
+                                            ctx = int(parts[-1])
+                                            break
+                            if ctx:
+                                ctx = int(ctx)
+                                if ctx >= 1_000_000:
+                                    return f"{ctx // 1_000_000}M", True
+                                elif ctx >= 1_000:
+                                    return f"{ctx // 1_000}k", ctx >= 900_000
+                                else:
+                                    return str(ctx), False
+                    except Exception:
+                        pass
+                    return "?", False
+
+                ollama_models = []
+                for m in models:
+                    model_name = m.get("name")
+                    ctx_str, supports1m = get_ollama_ctx(model_name)
+                    ollama_models.append({
+                        "id": f"ollama/{model_name}",
+                        "raw_model_id": model_name,
+                        "name": f"{model_name} (Ollama Local)",
+                        "price_str": "$0.00 / Local",
+                        "ctx_str": f"{ctx_str} Context" if ctx_str != "?" else "Local Context",
+                        "supports1m": supports1m,
+                        "provider": "ollama",
+                        "api_base": "http://localhost:11434"
+                    })
                 engines.append({
                     "provider": "ollama",
                     "name": "Ollama",
                     "api_base": "http://localhost:11434",
-                    "models": [
-                        {
-                            "id": f"ollama/{m.get('name')}",
-                            "raw_model_id": m.get("name"),
-                            "name": f"{m.get('name')} (Ollama Local)",
-                            "price_str": "$0.00 / Local",
-                            "ctx_str": "Local Context",
-                            "supports1m": False,
-                            "provider": "ollama",
-                            "api_base": "http://localhost:11434"
-                        }
-                        for m in models
-                    ]
+                    "models": ollama_models
                 })
     except Exception:
         pass
@@ -598,7 +639,8 @@ def run_model_configuration():
                 tags.append("\033[1;33m[CURRENT]\033[0m")
             tag_str = f"  {' '.join(tags)}" if tags else ""
             raw_display = opt.get("raw_model_id", opt["id"])
-            print(f"  {opt_idx}) {raw_display:<26} $0.00 / Local{tag_str}", file=sys.stderr)
+            ctx_display = opt.get("ctx_str", "Local Context")
+            print(f"  {opt_idx}) {raw_display:<26} $0.00 / Local   [{ctx_display}]{tag_str}", file=sys.stderr)
 
         custom_openrouter_num = len(all_options) + 1
         custom_local_num = len(all_options) + 2
