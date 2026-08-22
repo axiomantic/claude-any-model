@@ -78,7 +78,7 @@ Fast and cheap. Code completions, simple questions, formatting.
 
 **DeepSeek V4 Flash** — `$0.08 / $0.17` — 1M context
 
-Costs so little it's effectively free. A million output tokens for 17 cents.
+A million output tokens for 17 cents.
 
 ### Multi-step agents (Fable tier)
 
