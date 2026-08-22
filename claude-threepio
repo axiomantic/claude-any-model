@@ -291,6 +291,11 @@ def find_existing_api_key():
         os.path.expanduser("~/.bashrc"),
         os.path.expanduser("~/.config/fish/config.fish"),
     ]
+    if os.path.exists(APP_DIR):
+        for f in sorted(os.listdir(APP_DIR), reverse=True):
+            if f.startswith(".env.bak"):
+                search_files.append(os.path.join(APP_DIR, f))
+
     for sf in search_files:
         if os.path.exists(sf):
             try:
@@ -1183,6 +1188,9 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                         if new_key_raw:
                             wizard_state["api_key"] = new_key_raw
                             wizard_state["api_key_mode"] = "new"
+                        elif existing_api_key:
+                            wizard_state["api_key"] = existing_api_key
+                            wizard_state["api_key_mode"] = "existing"
                         active_step += 1
                         selected_idx = 0
                 elif k in (ord('q'), ord('Q')):
@@ -1961,7 +1969,22 @@ def run_model_configuration(initial_step=0):
     # 1. Save Environment & API Key
     env_path = os.path.join(APP_DIR, ".env")
     api_key_to_save = wizard_result.get("api_key", "")
+    api_key_mode = wizard_result.get("api_key_mode", "")
+
+    # Protect existing key if not explicitly switched to free_only
+    if not api_key_to_save and api_key_mode != "free_only":
+        found_k = find_existing_api_key()
+        if found_k:
+            api_key_to_save = found_k
+
     os.makedirs(APP_DIR, exist_ok=True)
+    if os.path.exists(env_path):
+        try:
+            backup_env_path = f"{env_path}.bak.{int(datetime.now().timestamp())}"
+            shutil.copy2(env_path, backup_env_path)
+        except Exception:
+            pass
+
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(f"OPENROUTER_API_KEY={api_key_to_save}\nPORT={PORT}\n")
     os.chmod(env_path, 0o600)
