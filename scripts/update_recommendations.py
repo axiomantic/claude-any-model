@@ -44,31 +44,34 @@ def extract_current_tiers(setup_path="setup.sh"):
         content = f.read()
     
     tiers = []
-    tier_blocks = re.findall(
-        r'\{\s*"tier_name":\s*"([^"]+)",\s*"tier_label":\s*"([^"]+)",\s*"claude_name":\s*"([^"]+)",\s*"options":\s*\[(.*?)\]\s*\}',
+    tier_matches = re.finditer(
+        r'\{\s*"tier_name":\s*"([^"]+)",\s*"tier_label":\s*"([^"]+)",\s*"claude_name":\s*"([^"]+)",\s*"options":\s*\[(.*?)\](?:,\s*"ollama_options":\s*(ollama_opts\(\[.*?\]\)))?,?\s*\}',
         content,
         re.DOTALL
     )
-    for tname, tlabel, cname, opt_text in tier_blocks:
+    for m in tier_matches:
+        tname, tlabel, cname, opt_text, ollama_block = m.groups()
         opts = []
         for line in opt_text.strip().split("\n"):
-            m = re.search(r'get_model_entry\(catalog,\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*(True|False)(?:,\s*is_recommended=(True|False))?\)', line)
-            if m:
+            om = re.search(r'get_model_entry\(catalog,\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*(True|False)(?:,\s*is_recommended=(True|False))?\)', line)
+            if om:
                 opts.append({
-                    "id": m.group(1),
-                    "name": m.group(2),
-                    "price_str": m.group(3),
-                    "ctx_str": m.group(4),
-                    "supports1m": m.group(5) == "True",
-                    "is_recommended": m.group(6) == "True" if m.group(6) else False
+                    "id": om.group(1),
+                    "name": om.group(2),
+                    "price_str": om.group(3),
+                    "ctx_str": om.group(4),
+                    "supports1m": om.group(5) == "True",
+                    "is_recommended": om.group(6) == "True" if om.group(6) else False
                 })
         tiers.append({
             "tier_name": tname,
             "tier_label": tlabel,
             "claude_name": cname,
-            "options": opts
+            "options": opts,
+            "ollama_block": ollama_block
         })
     return tiers
+
 
 def fetch_openrouter_catalog():
     info("Fetching full model catalog from OpenRouter API...")
@@ -362,8 +365,13 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
     with open(setup_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # Extract existing ollama blocks so they are not wiped out
+    current_tiers = extract_current_tiers(setup_path)
+    ollama_by_tier = {t["tier_name"]: t.get("ollama_block") for t in current_tiers}
+
     tier_blocks = []
     for tc in analysis_result.get("tier_comparisons", []):
+        tname = tc.get("tier_name", "")
         opts_code = []
         for opt in tc.get("options", []):
             mid = opt.get("id", "")
@@ -386,13 +394,17 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
                 opts_code.append(f'                get_model_entry(catalog, "{mid}", "{name}", "{p_str}", "{c_str}", {supp1m}),')
 
         opts_str = "\n".join(opts_code)
+        ollama_code = ""
+        if ollama_by_tier.get(tname):
+            ollama_code = f',\n            "ollama_options": {ollama_by_tier[tname]}'
+
         block = f"""        {{
-            "tier_name": "{tc.get('tier_name')}",
+            "tier_name": "{tname}",
             "tier_label": "{tc.get('tier_label')}",
             "claude_name": "{tc.get('claude_name')}",
             "options": [
 {opts_str}
-            ]
+            ]{ollama_code}
         }}"""
         tier_blocks.append(block)
 
@@ -404,6 +416,7 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
         content,
         flags=re.DOTALL
     )
+
 
     updated = re.sub(
         r'^MODELS_LAST_REVISITED="[^"]+"',
