@@ -12,7 +12,7 @@ Route Claude Desktop and Claude CLI requests to any model — hundreds of cloud 
 
 ## What is This?
 
-Anthropic includes a **Third-Party Inference** mode (called **3P mode** internally) in Claude Desktop, designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). When 3P mode is active, Claude Desktop runs from an isolated `~/Library/Application Support/Claude-3p/` directory instead of the default `~/Library/Application Support/Claude/`. However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
+Anthropic includes a **Third-Party Inference** mode (called **3P mode** internally) in Claude Desktop, designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). When 3P mode is active, Claude Desktop runs from an isolated 3P directory instead of the default 1P directory — on macOS this is `~/Library/Application Support/Claude-3p/` vs `~/Library/Application Support/Claude/`, and on Linux it is `~/.config/Claude-3p/` vs `~/.config/Claude/`. However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
 
 `claude-any-model` breaks this lock-in by using 3P mode as the entry point:
 
@@ -80,7 +80,7 @@ If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inf
 * **Inference Gateway API Key:** `dummy-key`
 * **Credential Kind:** `Static`
 
-> **Note:** Always quit Claude Desktop (**Cmd+Q**) before running `./setup.sh models` so Claude cleanly loads the updated profile on launch.
+> **Note:** Always quit Claude Desktop before running `./setup.sh models` so Claude cleanly loads the updated profile on launch.
 
 ---
 
@@ -107,7 +107,7 @@ To unlock it:
 ### 2. Import Your Sessions
 
 1. Restart Claude Desktop in Gateway mode.
-2. Open **Settings** (`Cmd + ,` on macOS) -> **Import**.
+2. Open **Settings** (`Cmd + ,` on macOS, `Ctrl + ,` on Linux) -> **Import**.
 3. Select your local sources:
    * **Claude app data** (imports previous 1P Desktop chat and code sessions)
    * **Terminal (CLI)** (imports CLI sessions from `~/.claude/projects/`)
