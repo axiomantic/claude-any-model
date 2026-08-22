@@ -52,53 +52,21 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/cl
 
 ---
 
-## Model Recommendations
+## Model Tiers
 
-Each Claude tier is mapped to a recommended OpenRouter model. The tier names are what Claude Desktop and Claude Code send internally — you'll see them in the model picker with live pricing.
+Each Claude tier maps to a recommended OpenRouter model. Run `./claude-any-model models` to pick from curated recommendations or set your own custom model for any tier.
 
-### Daily coding (Sonnet tier)
+| Tier | Best For | Recommended Model | Price (per 1M in/out) | Context |
+|------|----------|--------------------|-----------------------|---------|
+| Sonnet | Daily coding, agentic tasks | Qwen3 Coder Next | $0.12 / $0.80 | 262k |
+| Opus | Architecture, deep reasoning | Kimi K3 | $3.00 / $15.00 | 1M |
+| Haiku | Quick tasks, completions | DeepSeek V4 Flash | $0.08 / $0.17 | 1M |
+| Fable | Multi-step agents, long context | GLM-5.2 | $0.97 / $3.04 | 1M |
+| Mythos | Frontier, Claude-native | Claude Opus 5 | $5.00 / $25.00 | 1M |
 
-The workhorse tier. What you'll use 90% of the time for coding, agentic tasks, and iteration.
+For comparison, Claude's own overage rates are $15-25 per million output tokens. The Sonnet-tier Qwen3 Coder Next at $0.80 output is the main reason to use this project — a full day of coding that would cost ~$50-100 in overage costs roughly $1-3.
 
-**Qwen3 Coder Next** — `$0.12 input / $0.80 output per 1M tokens` — 262k context
-
-Compared to Claude Sonnet at `$3.00 / $15.00`, a full day of coding that would cost ~$50-100 in Claude overage costs roughly $1-3 here. This is the main reason to use this project.
-
-### Heavy reasoning (Opus tier)
-
-For architecture decisions, complex debugging, and deep analysis where you'd normally reach for Opus.
-
-**Kimi K3** — `$3.00 / $15.00` — 1M context
-
-Priced the same as Claude Opus 4 but with a 1M context window. Use when Sonnet-tier models aren't cutting it.
-
-### Quick tasks (Haiku tier)
-
-Fast and cheap. Code completions, simple questions, formatting.
-
-**DeepSeek V4 Flash** — `$0.08 / $0.17` — 1M context
-
-A million output tokens for 17 cents.
-
-### Multi-step agents (Fable tier)
-
-For multi-step agent workflows that need sustained reasoning across long contexts.
-
-**GLM-5.2** — `$0.97 / $3.04` — 1M context
-
-A mid-range option that balances cost and capability for agentic runs.
-
-### Frontier (Mythos tier)
-
-When you want the absolute best available, or need native Claude compatibility for a specific task.
-
-**Claude Opus 5** — `$5.00 / $25.00` — 1M context
-
-This is Claude itself via OpenRouter. Use when you need guaranteed Claude behavior and are OK paying for it.
-
-### Local inference (all tiers)
-
-If Ollama is running, `./claude-any-model models` auto-discovers your local models and offers them as free alternatives at any tier. LM Studio and vLLM are also supported on any OpenAI-compatible endpoint.
+Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a free option at any tier.
 
 ---
 
