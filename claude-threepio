@@ -226,16 +226,36 @@ def is_claude_running():
     except Exception:
         return False
 
-def check_claude_closed():
+def prompt_restart_claude():
+    """Prompt the user to restart Claude Desktop if running, or restart it automatically on confirmation."""
+    if not is_claude_running():
+        return
+    quit_hint = "Ctrl+Q" if platform.system() != "Darwin" else "Cmd+Q"
+    warn("Claude Desktop is currently running.")
+    ans = safe_input(f"Restart Claude Desktop now to apply changes? ({quit_hint} and relaunch) (Y/n): ", "y").lower()
+    if ans in ("y", "yes"):
+        info("Restarting Claude Desktop...")
+        try:
+            if platform.system() == "Darwin":
+                subprocess.run(["osascript", "-e", 'quit app "Claude"'], capture_output=True)
+                time.sleep(1.5)
+                subprocess.run(["open", "-a", "Claude"], capture_output=True)
+                success("Claude Desktop restarted successfully.")
+            else:
+                subprocess.run(["pkill", "-f", "[Cc]laude"], capture_output=True)
+                time.sleep(1.5)
+                subprocess.Popen(["claude"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                success("Claude Desktop restarted successfully.")
+        except Exception as e:
+            warn(f"Could not auto-restart Claude Desktop ({e}). Please restart manually ({quit_hint}).")
+    else:
+        info(f"Changes saved. Restart Claude Desktop ({quit_hint}) whenever you are ready.")
+
+def notify_claude_running_restart():
     if is_claude_running():
-        warn("Claude Desktop is currently running.")
-        quit_hint = "Ctrl+Q or close the window" if platform.system() != "Darwin" else "Cmd+Q"
-        print(f"Please quit Claude Desktop (\033[1;36m{quit_hint}\033[0m) so updated model profiles load cleanly.", file=sys.stderr)
-        safe_input("Press [Enter] once Claude Desktop is closed... ")
-        while is_claude_running():
-            warn("Claude Desktop is still running. Please quit Claude Desktop completely.")
-            safe_input("Press [Enter] once Claude Desktop is closed... ")
-        success("Claude Desktop is closed.")
+        quit_hint = "Ctrl+Q" if platform.system() != "Darwin" else "Cmd+Q"
+        warn(f"Claude Desktop is running. Restart Claude Desktop ({quit_hint} and relaunch) for changes to take effect.")
+
 
 def validate_openrouter_key(api_key):
     if not api_key or not api_key.startswith("sk-or-v1-"):
@@ -859,7 +879,6 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
 
 
 def run_model_configuration():
-    check_claude_closed()
     setup_env(force=False)
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config()
@@ -1497,7 +1516,7 @@ WantedBy=default.target
         info(f"Unsupported platform. Launch proxy manually using {runner}")
 
 def uninstall_service():
-    check_claude_closed()
+    notify_claude_running_restart()
     header("Uninstalling claude-threepio")
     if platform.system() == "Darwin" and os.path.exists(PLIST_PATH):
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
@@ -1797,8 +1816,6 @@ def switch_claude_mode(target_mode="toggle"):
     if current == target_mode:
         info(f"Claude Desktop is ALREADY in {target_mode.upper()} mode.")
         return
-
-    check_claude_closed()
 
     if target_mode == "regular":
         info("Switching Claude Desktop to REGULAR MODE (Official Anthropic Account)...")
@@ -2183,7 +2200,9 @@ def post_setup_prompt():
     info(f"Launch Claude CLI via proxy:  ./claude-threepio launch")
     info(f"  — or manually: ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT} ANTHROPIC_API_KEY=dummy-key claude")
 
-    if not is_claude_running():
+    if is_claude_running():
+        prompt_restart_claude()
+    else:
         ans = safe_input("Would you like to open Claude Desktop now? (Y/n): ", "y").lower()
         if ans in ("y", "yes", ""):
             if platform.system() == "Darwin":
