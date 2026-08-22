@@ -86,24 +86,6 @@ Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a fr
 
 ---
 
-## Gateway Mode Setup in Claude Desktop
-
-Gateway mode is Claude Desktop's **3P mode** (Third-Party Inference) configured to route through the local proxy. Regular mode (1P) uses your native Anthropic account directly.
-
-### Automated Configuration (Recommended)
-
-Running `./claude-any-model install` or `./claude-any-model models` automatically configures both the background gateway daemon (launchd on macOS, systemd user service on Linux) and Claude Desktop's 3P profile. The 3P config directory is `~/Library/Application Support/Claude-3p/configLibrary/` on macOS, or `~/.config/Claude-3p/configLibrary/` on Linux.
-
-### Manual GUI Verification
-
-If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inference**):
-* **Inference Provider:** `Gateway`
-* **Inference Gateway Base URL:** `http://127.0.0.1:3010`
-* **Inference Gateway API Key:** `dummy-key`
-* **Credential Kind:** `Static`
-
----
-
 ## Switching Between Gateway Mode and Regular Claude
 
 You can toggle between **Gateway Mode** (3P — OpenRouter proxy) and **Regular Claude** (1P — official Anthropic account) with a single command:
