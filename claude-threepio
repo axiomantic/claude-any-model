@@ -506,41 +506,242 @@ def fetch_openrouter_catalog():
     return catalog
 
 CURATED_DESCRIPTIONS = {
-    "deepseek/deepseek-v4-pro": "DeepSeek's flagship frontier reasoning and coding architecture. Excels at complex system design, deep mathematical reasoning, multi-step agentic problem-solving, and large refactors with full 1M context support.",
-    "nvidia/nemotron-3-ultra-550b-a55b:free": "NVIDIA's massive 550B ultra-scale MoE model from the OpenRouter Free Collection. Optimized for enterprise reasoning, high-throughput agent planning, and complex instruction following with 1M context at $0.00 cost.",
-    "stealth/ox-alpha": "Next-generation stealth reasoning model available for free on OpenRouter. Features advanced multi-step chain-of-thought, strong code generation, and 1M context window.",
-    "z-ai/glm-5.2:free": "Zhipu AI's bilingual frontier reasoning model from the Free Collection. Strong mathematical logic, coding comprehension, long-context retrieval, and multi-turn conversational agents with 256k context.",
-    "z-ai/glm-5.2": "Zhipu AI's bilingual frontier reasoning model. Features strong mathematical reasoning, coding comprehension, long-context retrieval, and multi-turn conversational agents with full 1M context window.",
-    "qwen/qwen3.7-plus": "Alibaba Cloud's heavyweight hybrid reasoning model with 1M context window. Superior benchmark performance across coding, math, agent tool calling, and long-context synthesis.",
-    "deepseek/deepseek-v3.2": "DeepSeek's efficient MoE model delivering strong performance on everyday software engineering and multi-turn workflows at ultra-low latency.",
-    "google/gemini-3.7-flash": "Google's flagship hybrid reasoning model featuring dynamic thought budgeting, 1M context window, fast execution speed, and multimodal capabilities.",
-    "moonshotai/kimi-k2.5": "Moonshot AI's high-speed long-context reasoning model, optimized for complex document synthesis, multi-hop reasoning, and deep codebase analysis.",
-    "moonshotai/kimi-k3": "Moonshot AI's next-generation frontier reasoning architecture with 1M context. Unmatched performance on complex system design, deep mathematical proofs, and multi-agent workflows.",
-    "deepseek/deepseek-r1-0528": "DeepSeek's pure reinforcement-learning reasoning model. Specialized for deep mathematical derivations, complex logic puzzles, and difficult algorithm development.",
-    "openai/gpt-5.6-terra": "OpenAI's frontier architecture featuring high-capacity reasoning, advanced tool use, agent workflow orchestration, and 1M context window.",
-    "anthropic/claude-sonnet-4.6": "Anthropic's frontier Sonnet-class model with state-of-the-art performance across coding, agents, and complex professional workflows. Excels at iterative software development, large codebase navigation, and end-to-end task completion.",
-    "anthropic/claude-sonnet-4": "Anthropic's Sonnet 4 model, delivering strong precision on SWE-bench verified coding tasks, robust instruction following, and agent workflows.",
-    "anthropic/claude-opus-5": "Anthropic's ultimate frontier architecture designed for the hardest cognitive tasks, massive architectural design, scientific synthesis, and complex multi-agent systems.",
-    "deepseek/deepseek-v4-flash": "DeepSeek's ultra-fast, budget-friendly workhorse model with native 1M context support. Optimized for rapid coding, linting, code transformation, and high-frequency queries at $0.08/$0.15 per 1M tokens.",
-    "cohere/north-mini-code:free": "Cohere's specialized code-generation model from the OpenRouter Free Collection. Optimized for repository search, syntactic completion, refactoring, and code explanation with 256k context.",
-    "poolside/laguna-s-2.1:free": "Poolside's dedicated software intelligence model from the OpenRouter Free Collection. Specialized for developer tooling, test generation, and pull request reviews with 262k context.",
-    "google/gemma-4-31b-it:free": "Google's open-weights 31B instruction-tuned model from the Free Collection. Strong zero-shot performance, code understanding, and 262k context window.",
-    "qwen/qwen3.7-flash": "Alibaba Cloud's ultra-budget workhorse at $0.03/$0.13 per 1M tokens. Features 1M context window, lightning-fast response times, and strong coding abilities.",
-    "google/gemini-2.0-flash-001": "Google's high-speed multimodal production model with 1M context window, real-time response speeds, and robust tool execution.",
-    "qwen/qwen3-coder-next": "Next-generation code reasoning model from Alibaba Cloud. Strong performance across automated refactoring, unit test generation, and architectural design.",
-    "qwen/qwen3-coder-30b-a3b-instruct": "Alibaba Cloud's efficient 30B coding model. Specialized for multi-file bug fixing, code conversion, and full-stack software development at $0.07/$0.28 per 1M tokens.",
-    "qwen/qwen3-coder-flash": "Qwen's fast 1M context coding specialist, delivering high-speed code generation and large repository search.",
-    "mistralai/codestral-2508": "Mistral AI's dedicated code generation model with 256k context, fluent multi-language support, and fill-in-the-middle capabilities.",
-    "mistralai/ministral-8b-2512": "Mistral AI's lightweight edge and server model. Low latency, precise instruction adherence, and highly cost-effective.",
-    "mistralai/mistral-nemo": "Mistral AI and NVIDIA collaborative 12B model with 128k context, strong multilingual support, and high efficiency.",
-    "nvidia/nemotron-3.5-lightning:free": "NVIDIA's ultra-fast lightning model from the Free Collection, offering near-instant latency and 1M context window for rapid querying.",
-    "nvidia/nemotron-3-nano-30b-a3b:free": "NVIDIA's 30B efficient nano model from the Free Collection, optimized for fast lightweight reasoning with 256k context.",
-    "thinkingmachines/inkling-small:free": "Thinking Machines' ultra-compact reasoning model from the Free Collection, designed for quick classification and lightweight tool calling.",
-    "inclusionai/ling-3.0-flash": "Inclusion AI's ultra-low latency model at $0.02/$0.06 per 1M tokens, optimized for rapid text operations and structured parsing.",
-    "openai/gpt-oss-120b": "OpenAI's open-weights 120B model offering frontier performance on general tasks at ultra-low inference pricing.",
-    "amazon/nova-micro-v1": "Amazon's ultra-fast micro text model with 128k context, built for high-throughput, low-latency processing.",
-    "meta-llama/llama-3.1-8b-instruct": "Meta's lightweight instruction-tuned 8B model with 131k context window for efficient multi-turn tasks.",
-    "openai/gpt-5.6-luna": "OpenAI's fast, responsive 1M context reasoning model optimized for day-to-day coding and conversational tasks.",
+    "deepseek/deepseek-v4-pro": (
+        "DeepSeek's flagship frontier reasoning and coding architecture. Built for complex system design, "
+        "deep mathematical derivations, multi-step autonomous agent execution, and large repo refactors.\n\n"
+        "• Native 1M Token Context: Ingests full codebases, libraries, and conversations without degradation.\n"
+        "• MoE Architecture: Delivers frontier reasoning performance at ultra-competitive $0.50/$1.00 per 1M pricing.\n"
+        "• Recommended Tier Match: Heavyweight Opus & Fable default for mission-critical architectural engineering."
+    ),
+    "nvidia/nemotron-3-ultra-550b-a55b:free": (
+        "NVIDIA's massive 550B ultra-scale MoE model from the OpenRouter Free Collection. Optimized for enterprise reasoning, "
+        "high-throughput agent planning, and complex instruction adherence at $0.00 zero cost.\n\n"
+        "• 1M Context Window: Massive capacity for large document analysis, multi-file code editing, and long session state.\n"
+        "• Advanced Synthetic Data Alignment: Tuned on NVIDIA's high-precision reasoning and algorithmic datasets.\n"
+        "• Free Cloud Tier: Ideal for zero-cost Opus, Fable, and Mythos agent pipelines."
+    ),
+    "stealth/ox-alpha": (
+        "Next-generation stealth reasoning model available for free on OpenRouter. Features advanced multi-step chain-of-thought "
+        "and superior code generation capabilities across all languages.\n\n"
+        "• 1M Full Context Support: Seamlessly handles massive codebases and extended multi-turn chat sessions.\n"
+        "• Agentic Tool Calling: High fidelity instruction adherence for automated file creation, editing, and terminal tasks.\n"
+        "• Universally Available: Directly selectable across all 5 tiers at $0.00 inference cost."
+    ),
+    "z-ai/glm-5.2:free": (
+        "Zhipu AI's bilingual frontier reasoning model from the OpenRouter Free Collection. Delivers strong performance in "
+        "mathematical logic, code synthesis, long-context retrieval, and multi-turn conversational problem solving.\n\n"
+        "• 256k Context Window: Generous capacity for large projects and complex document parsing.\n"
+        "• Bilingual Mastery: Optimized for exceptional English and Chinese technical comprehension and translation.\n"
+        "• Zero-Cost Frontier Reasoning: Best for budget-conscious developers needing frontier-class logic."
+    ),
+    "z-ai/glm-5.2": (
+        "Zhipu AI's flagship bilingual frontier model featuring full 1M context support. Engineered for deep reasoning, "
+        "technical document comprehension, automated code translation, and multi-turn conversational agents.\n\n"
+        "• 1M Extended Context: Comprehensive context window for end-to-end repository indexing.\n"
+        "• Advanced Math & Logic: High scores across benchmark evaluations in mathematics, coding, and logical reasoning.\n"
+        "• High Throughput: Stable low-latency generation for interactive Claude Desktop sessions."
+    ),
+    "qwen/qwen3.7-plus": (
+        "Alibaba Cloud's heavyweight hybrid reasoning model with 1M context window. Demonstrates superior benchmark results "
+        "across software engineering, complex mathematics, agentic tool orchestration, and long-context synthesis.\n\n"
+        "• 1M Native Window: Capable of analyzing multiple complete repositories and massive data payloads.\n"
+        "• Balanced Economics: Frontier-tier cognitive capabilities priced at an accessible $0.32/$1.28 per 1M tokens.\n"
+        "• Tool & Schema Precision: Exceptional accuracy when executing nested JSON tool calls and structured outputs."
+    ),
+    "deepseek/deepseek-v3.2": (
+        "DeepSeek's highly optimized MoE architecture delivering strong performance on everyday software engineering and "
+        "multi-turn coding workflows at ultra-low latency and minimal cost.\n\n"
+        "• 163k Context: Ample context for standard file editing, test creation, and debugging sessions.\n"
+        "• Cost Efficiency: Remarkable value at $0.26/$0.38 per 1M tokens with near-instant token output speeds.\n"
+        "• Coding Proficiency: Strong track record on Python, TypeScript, Rust, Go, and C++ workflows."
+    ),
+    "google/gemini-3.7-flash": (
+        "Google's flagship hybrid reasoning model featuring dynamic thought budgeting and 1M context window. Combines "
+        "lightning-fast response times with configurable deep reasoning for complex analytical tasks.\n\n"
+        "• 1M Multimodal Context: Ingests text, large code trees, images, and structured datasets.\n"
+        "• Dynamic Reasoning: Automatically scales compute allocation based on problem complexity.\n"
+        "• High Throughput: Ultra-responsive generation speeds ideal for interactive paired programming."
+    ),
+    "moonshotai/kimi-k2.5": (
+        "Moonshot AI's high-speed long-context reasoning model, optimized for complex document synthesis, multi-hop reasoning, "
+        "and deep multi-file codebase analysis.\n\n"
+        "• 262k Extended Window: Handles large codebases and complex multi-chapter technical documents.\n"
+        "• Multi-Hop Logic: Excels at tracing intricate dependency graphs and complex variable lifecycles across files.\n"
+        "• Great Price-to-Performance: High intelligence density at $0.45/$2.25 per 1M tokens."
+    ),
+    "moonshotai/kimi-k3": (
+        "Moonshot AI's next-generation frontier reasoning architecture with 1M context. Unmatched performance on complex "
+        "system architecture, deep mathematical proofs, and autonomous multi-agent software engineering.\n\n"
+        "• 1M Context Window: Deep long-horizon memory for large enterprise projects and refactors.\n"
+        "• Frontier Intelligence: Competitive with leading closed-source frontier models on complex benchmark tasks.\n"
+        "• High Reliability: Highly resilient to prompt drift in lengthy multi-turn conversations."
+    ),
+    "deepseek/deepseek-r1-0528": (
+        "DeepSeek's pure reinforcement-learning reasoning model. Specialized for deep mathematical derivations, complex logic "
+        "puzzles, algorithm synthesis, and challenging debugging tasks.\n\n"
+        "• Transparent Chain-of-Thought: Emits step-by-step verifiable reasoning traces before outputting solutions.\n"
+        "• Hard Benchmark Leadership: Exceptional scores on AIME, MATH, Codeforces, and SWE-bench.\n"
+        "• Problem Solver: Best for resolving elusive race conditions, algorithm optimizations, and mathematical logic."
+    ),
+    "openai/gpt-5.6-terra": (
+        "OpenAI's frontier architecture featuring high-capacity reasoning, advanced tool use, agent workflow orchestration, "
+        "and native 1M context support.\n\n"
+        "• 1M Token Context: Ingests extensive code libraries and project histories.\n"
+        "• Agent Orchestration: Reliable execution of complex sequential and parallel tool calls.\n"
+        "• Broad Knowledge: Comprehensive domain expertise spanning computer science, law, science, and finance."
+    ),
+    "anthropic/claude-sonnet-4.6": (
+        "Anthropic's most capable Sonnet-class model, setting frontier industry standards across coding, agentic workflows, "
+        "and deep multi-turn problem-solving.\n\n"
+        "• Autonomous Software Engineering: Excels at iterative bug fixing, full repo refactors, and test-driven development.\n"
+        "• Deep Context Ingestion: High precision long-context recall across 1M tokens with negligible needle-in-haystack degradation.\n"
+        "• Tool Use Mastery: Near-zero hallucination rate on complex JSON schema calls and tool execution pipelines."
+    ),
+    "anthropic/claude-sonnet-4": (
+        "Anthropic's Sonnet 4 model, delivering strong precision on SWE-bench verified coding tasks, robust instruction "
+        "following, and reliable agent workflows.\n\n"
+        "• 1M Full Context: Native 1M token context support with high retrieval accuracy.\n"
+        "• Controllability: Highly responsive to system prompts, style guidelines, and strict formatting constraints.\n"
+        "• Balanced Frontier: Excellent everyday driver for professional software engineering."
+    ),
+    "anthropic/claude-opus-5": (
+        "Anthropic's ultimate frontier architecture designed for the hardest cognitive tasks, massive architectural design, "
+        "scientific synthesis, and complex multi-agent systems.\n\n"
+        "• Peak Cognitive Depth: Superior nuance, deep reasoning, and high-order abstract problem-solving.\n"
+        "• 1M Context Window: Deep contextual understanding across massive project contexts.\n"
+        "• Flagship Mythos Model: Top-tier choice for uncompromising quality on the most demanding intellectual tasks."
+    ),
+    "deepseek/deepseek-v4-flash": (
+        "DeepSeek's ultra-fast, budget-friendly workhorse model with native 1M context support. Optimized for rapid coding, "
+        "linting, code transformation, and high-frequency queries at an ultra-low $0.08/$0.15 per 1M tokens.\n\n"
+        "• High Throughput: Generates tokens at blazing speeds for snappy desktop interactions.\n"
+        "• 1M Token Context: Ingests large files and project contexts at a fraction of standard cost.\n"
+        "• Recommended Sonnet Tier Match: Best-in-class balance of speed, cost, and coding proficiency."
+    ),
+    "cohere/north-mini-code:free": (
+        "Cohere's specialized code-generation model from the OpenRouter Free Collection. Optimized for repository search, "
+        "syntactic completion, refactoring, and code explanation with 256k context at $0.00 cost.\n\n"
+        "• 256k Context: Generous headroom for multi-file code review and repository exploration.\n"
+        "• Code Synthesis: Fine-tuned for Python, JavaScript, TypeScript, Java, and shell scripting.\n"
+        "• Free Sonnet Tier Driver: Ideal zero-cost daily coding partner."
+    ),
+    "poolside/laguna-s-2.1:free": (
+        "Poolside's dedicated software intelligence model from the OpenRouter Free Collection. Specialized for developer tooling, "
+        "test generation, and pull request reviews with 262k context.\n\n"
+        "• 262k Context Window: Comprehensive context for multi-file diffs and architectural reviews.\n"
+        "• Software Engineering Focus: Trained explicitly on developer workflows, unit tests, and commit histories.\n"
+        "• Free Inference: Zero API cost via OpenRouter Community Collection."
+    ),
+    "google/gemma-4-31b-it:free": (
+        "Google's open-weights 31B instruction-tuned model from the Free Collection. Demonstrates strong zero-shot performance, "
+        "code understanding, and 262k context window.\n\n"
+        "• 262k Context: Long-horizon reasoning for complex documents and code files.\n"
+        "• Google Research Lineage: Inherits architectural advancements from Gemini research.\n"
+        "• Free Community Option: Accessible high-quality open-weights model."
+    ),
+    "qwen/qwen3.7-flash": (
+        "Alibaba Cloud's ultra-budget workhorse at $0.03/$0.13 per 1M tokens. Features 1M context window, lightning-fast "
+        "response times, and strong coding abilities.\n\n"
+        "• 1M Context Window: Industry-leading context capacity at budget pricing.\n"
+        "• Ultra-Low Cost: Run millions of tokens for pennies without worrying about API spend.\n"
+        "• Recommended Haiku Tier Match: Top choice for lightweight tasks, rapid answers, and background indexing."
+    ),
+    "google/gemini-2.0-flash-001": (
+        "Google's high-speed multimodal production model with 1M context window, real-time response speeds, and robust tool execution.\n\n"
+        "• 1M Multimodal Window: Ingests documents, screenshots, and extensive code trees.\n"
+        "• Sub-Second Latency: Instantaneous first-token delivery for rapid conversational flow.\n"
+        "• Cost-Effective: High reliability and speed at $0.10/$0.40 per 1M tokens."
+    ),
+    "qwen/qwen3-coder-next": (
+        "Next-generation code reasoning model from Alibaba Cloud. Strong performance across automated refactoring, unit test "
+        "generation, and architectural design.\n\n"
+        "• 262k Context: Deep code navigation across interconnected modules.\n"
+        "• Multi-Language Fluent: Extensive training on modern languages, frameworks, and APIs.\n"
+        "• High Accuracy: Clean, runnable code generation with low syntax error rates."
+    ),
+    "qwen/qwen3-coder-30b-a3b-instruct": (
+        "Alibaba Cloud's efficient 30B coding model. Specialized for multi-file bug fixing, code conversion, and full-stack software "
+        "development at $0.07/$0.28 per 1M tokens.\n\n"
+        "• 262k Context Window: Sufficient memory for full file transformations and unit testing.\n"
+        "• Compact Architecture: Low latency and consistent output generation.\n"
+        "• Value Champion: Exceptional coding benchmark scores relative to its modest price."
+    ),
+    "qwen/qwen3-coder-flash": (
+        "Qwen's fast 1M context coding specialist, delivering high-speed code generation and large repository search.\n\n"
+        "• 1M Context Support: Full project ingestion and large log file parsing.\n"
+        "• Rapid Generation: Optimized for autocomplete, quick fixes, and interactive coding.\n"
+        "• Coding Fine-Tuning: Tuned specifically on programming challenges and test suites."
+    ),
+    "mistralai/codestral-2508": (
+        "Mistral AI's dedicated code generation model with 256k context, fluent multi-language support, and fill-in-the-middle "
+        "capabilities.\n\n"
+        "• 256k Context: Generous window for reading multiple project files simultaneously.\n"
+        "• Fill-In-The-Middle (FIM): Specialized for inserting code inside existing files and functions.\n"
+        "• Polyglot Mastery: Supports 80+ programming languages with high syntactic accuracy."
+    ),
+    "mistralai/ministral-8b-2512": (
+        "Mistral AI's lightweight edge and server model. Features low latency, precise instruction adherence, and highly "
+        "cost-effective pricing at $0.15/$0.15 per 1M tokens.\n\n"
+        "• 262k Context: Long context capabilities in a compact parameter footprint.\n"
+        "• Fast Execution: Ideal for fast utility commands, summarization, and quick edits.\n"
+        "• Efficient: Low memory and high throughput."
+    ),
+    "mistralai/mistral-nemo": (
+        "Mistral AI and NVIDIA collaborative 12B model with 128k context, strong multilingual support, and high efficiency.\n\n"
+        "• 128k Context: Great for daily coding, documentation, and conversational queries.\n"
+        "• Ultra-Low Pricing: Inexpensive at $0.02/$0.03 per 1M tokens.\n"
+        "• Tekken Tokenizer: High tokenization efficiency across code and non-English text."
+    ),
+    "nvidia/nemotron-3.5-lightning:free": (
+        "NVIDIA's ultra-fast lightning model from the Free Collection, offering near-instant latency and 1M context window "
+        "for rapid querying at $0.00 cost.\n\n"
+        "• 1M Context Support: Zero-cost long-context retrieval and file analysis.\n"
+        "• Instant Latency: High generation speed for quick lookups and short tasks.\n"
+        "• Free Haiku Tier Driver: Perfect for budget-conscious developers."
+    ),
+    "nvidia/nemotron-3-nano-30b-a3b:free": (
+        "NVIDIA's 30B efficient nano model from the Free Collection, optimized for fast lightweight reasoning with 256k context.\n\n"
+        "• 256k Context Window: Long context support for document and code review.\n"
+        "• Lightweight MoE: Fast token generation and low compute footprint.\n"
+        "• Free Cloud Inference: Available at $0.00 cost on OpenRouter."
+    ),
+    "thinkingmachines/inkling-small:free": (
+        "Thinking Machines' ultra-compact reasoning model from the Free Collection, designed for quick classification and "
+        "lightweight tool calling.\n\n"
+        "• 262k Context Window: Generous capacity for short tasks and context retrieval.\n"
+        "• Specialized Micro Model: Fast execution for simple queries and parsing.\n"
+        "• Free Community Option: Zero API cost."
+    ),
+    "inclusionai/ling-3.0-flash": (
+        "Inclusion AI's ultra-low latency model at $0.02/$0.06 per 1M tokens, optimized for rapid text operations and structured parsing.\n\n"
+        "• 262k Context Window: Long context processing at rock-bottom prices.\n"
+        "• High Speed: Fast response times for automated background pipelines.\n"
+        "• Cost Effective: Great for high-frequency utility tasks."
+    ),
+    "openai/gpt-oss-120b": (
+        "OpenAI's open-weights 120B model offering frontier performance on general tasks at ultra-low inference pricing.\n\n"
+        "• 131k Context Window: Standard context window for general coding and conversation.\n"
+        "• Open Weights: High transparency and community validation.\n"
+        "• Low Pricing: Inexpensive at $0.03/$0.17 per 1M tokens."
+    ),
+    "amazon/nova-micro-v1": (
+        "Amazon's ultra-fast micro text model with 128k context, built for high-throughput, low-latency processing.\n\n"
+        "• 128k Context Window: Capable of processing medium-to-large files.\n"
+        "• Ultra-Fast Delivery: Built for sub-second text completions.\n"
+        "• Economical: Priced at $0.04/$0.14 per 1M tokens."
+    ),
+    "meta-llama/llama-3.1-8b-instruct": (
+        "Meta's lightweight instruction-tuned 8B model with 131k context window for efficient multi-turn tasks.\n\n"
+        "• 131k Context: High recall accuracy across long conversations.\n"
+        "• Open Foundation: Well-researched instruction-tuned architecture.\n"
+        "• Dependable: Solid baseline performance for common developer tasks."
+    ),
+    "openai/gpt-5.6-luna": (
+        "OpenAI's fast, responsive 1M context reasoning model optimized for day-to-day coding and conversational tasks.\n\n"
+        "• 1M Context Window: Full project context ingestion with fast delivery.\n"
+        "• Balanced Capability: Strong general reasoning and code synthesis.\n"
+        "• Fast Execution: Smooth, continuous token streaming."
+    ),
 }
 
 def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_ctx, fallback_1m, is_recommended=False):
@@ -1018,6 +1219,12 @@ def run_model_configuration():
             "provider": "ollama",
             "api_base": "http://localhost:11434",
             "is_recommended": is_recommended,
+            "desc": (
+                f"Locally hosted Ollama model '{matched}'. Runs entirely on local GPU/CPU hardware with zero data leaving your machine.\n\n"
+                f"• Privacy & Security: 100% offline execution with zero API metering or cloud logging.\n"
+                f"• Local Engine Endpoint: http://localhost:11434\n"
+                f"• Context Window: Configured with {ctx_display} on your local Ollama runtime."
+            ),
         }
 
     def ollama_opts(entries):
