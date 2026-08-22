@@ -90,7 +90,7 @@ import urllib.request
 from datetime import datetime
 
 # Script & Daemon Metadata
-VERSION = "1.3.0"
+VERSION = "1.11.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-any-model"
@@ -224,7 +224,7 @@ def validate_openrouter_key(api_key):
         "https://openrouter.ai/api/v1/auth/key",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Claude-Any-Model/1.3.0"
+            "User-Agent": "Claude-Any-Model/1.11.0"
         }
     )
     try:
@@ -434,7 +434,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-Any-Model/1.3.0"}
+        headers={"User-Agent": "Claude-Any-Model/1.11.0"}
     )
     catalog = {}
     try:
@@ -909,6 +909,8 @@ strict_guardrail = StrictModelGuardrail()
         "inferenceModels": inference_models,
         "inferenceProvider": "gateway",
         "inferenceCredentialKind": "static",
+        "allowedEgressHosts": ["*"],
+        "coworkEgressAllowedHosts": ["*"],
         # Features & surfaces enabled
         "isClaudeCodeForDesktopEnabled": True,
         "coworkTabEnabled": True,
@@ -1279,123 +1281,21 @@ def status_service():
         except Exception:
             pass
 
-def is_desktop_commander_installed():
-    """Check if desktop-commander MCP is registered in Claude Code global MCP list."""
-    try:
-        res = subprocess.run(["claude", "mcp", "list", "-s", "user"], capture_output=True, text=True)
-        return "desktop-commander" in res.stdout
-    except Exception:
-        return False
-
-def install_desktop_commander():
-    """Install Desktop Commander MCP for both Claude Code CLI and Claude Desktop."""
-    header("Desktop Commander MCP Setup")
-    print("\033[1;36m[INFO]\033[0m Desktop Commander replaces built-in file/shell tools (Edit, Write, Read,", file=sys.stderr)
-    print("       Bash, Glob, Grep) with MCP equivalents — required in Gateway mode.", file=sys.stderr)
-
-    # ── Claude Code CLI ───────────────────────────────────────────────────────
-    if is_desktop_commander_installed():
-        info("Desktop Commander already registered in Claude Code (user scope).")
-    else:
-        info("Registering desktop-commander in Claude Code CLI (user scope)...")
-        res = subprocess.run(
-            ["claude", "mcp", "add", "-s", "user", "desktop-commander", "--", "npx", "-y", "@wonderwhy-er/desktop-commander"],
-            capture_output=True, text=True
-        )
-        if res.returncode == 0:
-            success("Desktop Commander registered in Claude Code CLI.")
-        else:
-            warn(f"Could not register via 'claude mcp add': {res.stderr.strip()}")
-            warn("You can add it manually: claude mcp add -s user desktop-commander -- npx -y @wonderwhy-er/desktop-commander")
-
-    # ── Claude Code: disable built-in tools ───────────────────────────────────
-    claude_settings_path = os.path.expanduser("~/.claude/settings.json")
-    os.makedirs(os.path.dirname(claude_settings_path), exist_ok=True)
-    builtin_tools = ["Edit", "Write", "Read", "Bash", "Glob", "Grep"]
-    try:
-        settings = {}
-        if os.path.exists(claude_settings_path):
-            with open(claude_settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        existing = settings.get("disallowedTools", [])
-        merged = sorted(set(existing) | set(builtin_tools))
-        settings["disallowedTools"] = merged
-        with open(claude_settings_path, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-        success(f"Disabled built-in tools in Claude Code settings: {builtin_tools}")
-    except Exception as e:
-        warn(f"Could not update {claude_settings_path}: {e}")
-
-    # ── Claude Desktop: add to claude_desktop_config.json ────────────────────
-    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
-    if os.path.exists(os.path.dirname(desktop_config_path)):
-        try:
-            desktop_cfg = {}
-            if os.path.exists(desktop_config_path):
-                with open(desktop_config_path, "r", encoding="utf-8") as f:
-                    desktop_cfg = json.load(f)
-            desktop_cfg.setdefault("mcpServers", {})["desktop-commander"] = {
-                "command": "npx",
-                "args": ["-y", "@wonderwhy-er/desktop-commander"]
-            }
-            with open(desktop_config_path, "w", encoding="utf-8") as f:
-                json.dump(desktop_cfg, f, indent=2)
-            success(f"Added desktop-commander to Claude Desktop config.")
-        except Exception as e:
-            warn(f"Could not update Claude Desktop config: {e}")
-
-    print("", file=sys.stderr)
-    info("Add this to your project CLAUDE.md for best results:")
-    print("  Native file and terminal tools are disabled. Use desktop-commander MCP tools", file=sys.stderr)
-    print("  (edit_block, write_file, search_files, start_process) for all file and shell ops.", file=sys.stderr)
-
-def uninstall_desktop_commander():
-    """Remove Desktop Commander MCP from Claude Code CLI and Claude Desktop."""
-    info("Removing Desktop Commander MCP...")
-
-    # Claude Code CLI
-    if is_desktop_commander_installed():
-        res = subprocess.run(["claude", "mcp", "remove", "-s", "user", "desktop-commander"], capture_output=True, text=True)
-        if res.returncode == 0:
-            success("Removed desktop-commander from Claude Code CLI.")
-        else:
-            warn(f"Could not remove via 'claude mcp remove': {res.stderr.strip()}")
-
-    # Claude Code: re-enable built-in tools
-    claude_settings_path = os.path.expanduser("~/.claude/settings.json")
-    if os.path.exists(claude_settings_path):
-        try:
-            with open(claude_settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-            builtin_tools = {"Edit", "Write", "Read", "Bash", "Glob", "Grep"}
-            settings["disallowedTools"] = [t for t in settings.get("disallowedTools", []) if t not in builtin_tools]
-            with open(claude_settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2)
-            success("Re-enabled built-in tools in Claude Code settings.")
-        except Exception as e:
-            warn(f"Could not update {claude_settings_path}: {e}")
-
-    # Claude Desktop config
-    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
-    if os.path.exists(desktop_config_path):
-        try:
-            with open(desktop_config_path, "r", encoding="utf-8") as f:
-                desktop_cfg = json.load(f)
-            desktop_cfg.get("mcpServers", {}).pop("desktop-commander", None)
-            with open(desktop_config_path, "w", encoding="utf-8") as f:
-                json.dump(desktop_cfg, f, indent=2)
-            success("Removed desktop-commander from Claude Desktop config.")
-        except Exception as e:
-            warn(f"Could not update Claude Desktop config: {e}")
-
 def configure_sandbox_network():
-    """Offer to configure the sandbox to allow all network domains in Claude Code settings.
+    """Offer to configure the network egress allowlist for the embedded Claude Code agent.
 
-    Gateway mode enforces a strict network sandbox by default, blocking outbound
-    network except 127.0.0.1 and api.anthropic.com. This makes gh CLI, curl, npx,
-    npm install, web search from Bash, and similar tools fail with 403.
+    Gateway mode enforces a strict network sandbox by default — only the inference
+    endpoint (127.0.0.1) and api.anthropic.com are reachable. This makes gh CLI,
+    curl, npx, npm install, web search from Bash, and similar tools fail with 403.
+
+    The allowlist is controlled by the 'allowedEgressHosts' key in the gateway
+    profile JSON (not ~/.claude/settings.json, which is ignored in gateway mode).
+    run_model_configuration() already writes allowedEgressHosts: ["*"] into the
+    profile. This function handles the case where the profile already exists but
+    lacks the key (e.g. upgrading from an older setup.sh version), and also sets
+    it in claude_desktop_config.json preferences as a belt-and-suspenders measure.
     """
-    marker_path = os.path.join(APP_DIR, ".sandbox_configured")
+    marker_path = os.path.join(APP_DIR, ".egress_configured")
     if os.path.exists(marker_path):
         return
 
@@ -1403,99 +1303,157 @@ def configure_sandbox_network():
     print("\033[1;36m[NETWORK]\033[0m Gateway mode enforces a strict network sandbox by default.", file=sys.stderr)
     print("         This blocks outbound network from Bash commands — gh CLI, curl, npx,", file=sys.stderr)
     print("         npm install, web search, and similar tools all fail with 403 errors.", file=sys.stderr)
-    print("         Allowing all domains restores full network access from Bash commands.", file=sys.stderr)
+    print("         Allowing all egress hosts restores full network access from Bash commands.", file=sys.stderr)
     print("", file=sys.stderr)
 
-    ans = safe_input("Configure sandbox to allow all network domains? (Y/n): ", "y").lower()
+    ans = safe_input("Configure network egress to allow all hosts? (Y/n): ", "y").lower()
     if ans not in ("y", "yes", ""):
-        info("Skipping sandbox network configuration. Bash commands will have restricted network access in Gateway mode.")
+        info("Skipping network egress configuration. Bash commands will have restricted network access in Gateway mode.")
         return
 
-    settings_path = os.path.expanduser("~/.claude/settings.json")
-    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-
-    settings = {}
-    if os.path.exists(settings_path):
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
-
-    # Save original sandbox state for restoration on uninstall/switch
-    backup_path = os.path.join(APP_DIR, ".sandbox_backup.json")
-    original_sandbox = settings.get("sandbox")
-    try:
-        with open(backup_path, "w", encoding="utf-8") as f:
-            json.dump({"sandbox": original_sandbox}, f, indent=2)
-    except Exception:
-        pass
-
-    # Merge in the allowed domains without clobbering other keys
-    sandbox = settings.get("sandbox", {})
-    if not isinstance(sandbox, dict):
-        sandbox = {}
-    network = sandbox.get("network", {})
-    if not isinstance(network, dict):
-        network = {}
-
-    network["allowedHosts"] = ["*"]
-    sandbox["network"] = network
-    settings["sandbox"] = sandbox
-
-    try:
-        with open(settings_path, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-        success("Sandbox configured to allow all network domains in ~/.claude/settings.json")
-        with open(marker_path, "w", encoding="utf-8") as f:
-            f.write("1")
-    except Exception as e:
-        warn(f"Could not update {settings_path}: {e}")
+    _set_egress_allowlist(["*"])
+    with open(marker_path, "w", encoding="utf-8") as f:
+        f.write("1")
+    success("Network egress configured to allow all hosts.")
 
 
-def remove_sandbox_network_config():
-    """Remove the sandbox network config added by configure_sandbox_network().
+def _set_egress_allowlist(hosts):
+    """Set egress allowlist keys in the live gateway profile and claude_desktop_config.json.
 
-    Restores the original sandbox settings from backup, or removes the sandbox
-    key entirely if there was no prior sandbox config.
+    Writes both 'allowedEgressHosts' (profile-level, read by the Desktop host's
+    vmEgressPolicy) and 'coworkEgressAllowedHosts' (workspace-level, translated
+    into the CLI subprocess network sandbox allowlist at spawn time). Both must
+    be present; the host enforces the stricter of the two.
     """
-    marker_path = os.path.join(APP_DIR, ".sandbox_configured")
-    if not os.path.exists(marker_path):
-        return
+    # Update the live gateway profile(s)
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    profile_ids = []
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            applied_id = meta.get("appliedId")
+            if applied_id:
+                profile_ids.append(applied_id)
+            for entry in meta.get("entries", []):
+                eid = entry.get("id")
+                if eid and eid not in profile_ids:
+                    profile_ids.append(eid)
+        except Exception:
+            pass
 
-    settings_path = os.path.expanduser("~/.claude/settings.json")
-    backup_path = os.path.join(APP_DIR, ".sandbox_backup.json")
+    for pid in profile_ids:
+        profile_path = os.path.join(CLAUDE_3P_DIR, f"{pid}.json")
+        if os.path.exists(profile_path):
+            try:
+                with open(profile_path, "r", encoding="utf-8") as f:
+                    profile = json.load(f)
+                profile["allowedEgressHosts"] = hosts
+                profile["coworkEgressAllowedHosts"] = hosts
+                with open(profile_path, "w", encoding="utf-8") as f:
+                    json.dump(profile, f, indent=2)
+            except Exception:
+                pass
 
-    original_sandbox = None
+    # Update the persistent backup copy
+    backup_path = os.path.join(APP_DIR, "gateway_profile.json")
     if os.path.exists(backup_path):
         try:
             with open(backup_path, "r", encoding="utf-8") as f:
                 backup = json.load(f)
-                original_sandbox = backup.get("sandbox")
+            backup["allowedEgressHosts"] = hosts
+            backup["coworkEgressAllowedHosts"] = hosts
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(backup, f, indent=2)
         except Exception:
             pass
 
-    if os.path.exists(settings_path):
+    # Also set in claude_desktop_config.json preferences
+    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude-3p/claude_desktop_config.json")
+    if os.path.exists(desktop_config_path):
         try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-
-            if original_sandbox is not None:
-                settings["sandbox"] = original_sandbox
-            else:
-                settings.pop("sandbox", None)
-
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2)
-            success("Restored original sandbox settings in ~/.claude/settings.json")
-        except Exception as e:
-            warn(f"Could not restore {settings_path}: {e}")
-
-    for p in [marker_path, backup_path]:
-        try:
-            os.remove(p)
+            with open(desktop_config_path, "r", encoding="utf-8") as f:
+                desktop_cfg = json.load(f)
+            prefs = desktop_cfg.setdefault("preferences", {})
+            prefs["allowedEgressHosts"] = hosts
+            prefs["coworkEgressAllowedHosts"] = hosts
+            with open(desktop_config_path, "w", encoding="utf-8") as f:
+                json.dump(desktop_cfg, f, indent=2)
         except Exception:
             pass
+
+
+def remove_sandbox_network_config():
+    """Remove the allowedEgressHosts config added by configure_sandbox_network().
+
+    Removes the key from the live gateway profile, the persistent backup, and
+    claude_desktop_config.json preferences. This restores the default sandbox
+    behavior (only inference endpoint + api.anthropic.com reachable).
+    """
+    marker_path = os.path.join(APP_DIR, ".egress_configured")
+
+    # Remove allowedEgressHosts from all gateway profiles
+    meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
+    profile_ids = []
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            applied_id = meta.get("appliedId")
+            if applied_id:
+                profile_ids.append(applied_id)
+            for entry in meta.get("entries", []):
+                eid = entry.get("id")
+                if eid and eid not in profile_ids:
+                    profile_ids.append(eid)
+        except Exception:
+            pass
+
+    for pid in profile_ids:
+        profile_path = os.path.join(CLAUDE_3P_DIR, f"{pid}.json")
+        if os.path.exists(profile_path):
+            try:
+                with open(profile_path, "r", encoding="utf-8") as f:
+                    profile = json.load(f)
+                profile.pop("allowedEgressHosts", None)
+                profile.pop("coworkEgressAllowedHosts", None)
+                with open(profile_path, "w", encoding="utf-8") as f:
+                    json.dump(profile, f, indent=2)
+            except Exception:
+                pass
+
+    # Remove from persistent backup
+    backup_path = os.path.join(APP_DIR, "gateway_profile.json")
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                backup = json.load(f)
+            backup.pop("allowedEgressHosts", None)
+            backup.pop("coworkEgressAllowedHosts", None)
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(backup, f, indent=2)
+        except Exception:
+            pass
+
+    # Remove from claude_desktop_config.json preferences
+    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude-3p/claude_desktop_config.json")
+    if os.path.exists(desktop_config_path):
+        try:
+            with open(desktop_config_path, "r", encoding="utf-8") as f:
+                desktop_cfg = json.load(f)
+            desktop_cfg.get("preferences", {}).pop("allowedEgressHosts", None)
+            desktop_cfg.get("preferences", {}).pop("coworkEgressAllowedHosts", None)
+            with open(desktop_config_path, "w", encoding="utf-8") as f:
+                json.dump(desktop_cfg, f, indent=2)
+        except Exception:
+            pass
+
+    try:
+        os.remove(marker_path)
+    except Exception:
+        pass
+
+    success("Removed network egress configuration. Sandbox restrictions restored to default.")
 
 
 def launch_claude_cli(extra_args=None):
@@ -1524,15 +1482,6 @@ def launch_claude_cli(extra_args=None):
 
 def post_setup_prompt():
     print("", file=sys.stderr)
-    # Offer Desktop Commander install if not already present
-    if not is_desktop_commander_installed():
-        print("\033[1;36m[TIP]\033[0m In Gateway mode, built-in file/shell tools (Edit, Write, Bash, etc.)", file=sys.stderr)
-        print("     are replaced by Desktop Commander MCP for full agentic capabilities.", file=sys.stderr)
-        ans = safe_input("Install Desktop Commander MCP now? (Y/n): ", "y").lower()
-        if ans in ("y", "yes", ""):
-            install_desktop_commander()
-
-    print("", file=sys.stderr)
     info(f"Launch Claude CLI via proxy:  ./setup.sh launch")
     info(f"  — or manually: ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT} ANTHROPIC_API_KEY=dummy-key claude")
 
@@ -1550,12 +1499,11 @@ def usage():
     print("  launch [args]  - Launch Claude CLI routed through the local proxy (sets ANTHROPIC_BASE_URL)", file=sys.stderr)
     print("  install        - Full setup: venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
     print("  models         - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
-    print("  desktop-commander - Install Desktop Commander MCP (required for tool use in Gateway mode)", file=sys.stderr)
     print("  status         - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
     print("  start          - Starts the launchd daemon", file=sys.stderr)
     print("  stop           - Stops the launchd daemon", file=sys.stderr)
     print("  restart        - Restarts the launchd daemon", file=sys.stderr)
-    print("  uninstall      - Unregisters launchd daemon, optionally removes Desktop Commander", file=sys.stderr)
+    print("  uninstall      - Unregisters launchd daemon", file=sys.stderr)
     print("  version        - Displays the current proxy script version", file=sys.stderr)
     sys.exit(1)
 
@@ -1567,8 +1515,6 @@ def main():
         switch_claude_mode(target)
     elif cmd in ("launch", "run"):
         launch_claude_cli(extra_args=sys.argv[2:])
-    elif cmd in ("desktop-commander", "dc"):
-        install_desktop_commander()
     elif cmd == "install":
         ensure_dirs()
         setup_env()
@@ -1601,10 +1547,6 @@ def main():
         subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
         success("Stopped proxy daemon")
     elif cmd == "uninstall":
-        if is_desktop_commander_installed():
-            ans = safe_input("Remove Desktop Commander MCP as well? (Y/n): ", "y").lower()
-            if ans in ("y", "yes", ""):
-                uninstall_desktop_commander()
         remove_sandbox_network_config()
         uninstall_service()
     elif cmd in ("version", "--version", "-v"):
