@@ -90,7 +90,7 @@ import urllib.request
 from datetime import datetime
 
 # Script & Daemon Metadata
-VERSION = "1.14.0"
+VERSION = "1.19.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-threepio"
@@ -264,7 +264,7 @@ def validate_openrouter_key(api_key):
         "https://openrouter.ai/api/v1/auth/key",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "claude-threepio/1.14.0"
+            "User-Agent": "claude-threepio/1.19.0"
         }
     )
     try:
@@ -474,7 +474,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "claude-threepio/1.14.0"}
+        headers={"User-Agent": "claude-threepio/1.19.0"}
     )
     catalog = {}
     try:
