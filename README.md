@@ -28,15 +28,15 @@ A typical day of coding that would cost $50-200+ in Claude overage costs $2-5 on
 
 ## How It Works
 
-Claude Desktop has a built-in **Third-Party Inference** mode (called **3P mode**) intended for enterprise deployments (AWS Bedrock, Vertex AI, etc.). Out of the box, 3P mode only supports Anthropic models — you pick *where* they're hosted, not *which* models.
+Claude Desktop has two modes: **First-Party Mode (1P)** — your normal subscription, Anthropic models, Anthropic billing — and **Third-Party Mode (3P)**, intended for enterprise deployments (AWS Bedrock, Vertex AI, etc.). Out of the box, 3P only supports Anthropic models — you pick *where* they're hosted, not *which* models.
 
-`claude-any-model` uses 3P mode as the entry point and swaps in any model:
+`claude-any-model` uses 3P as the entry point and swaps in any model:
 
 1. **Claude Desktop or CLI** sends requests to a lightweight local gateway (`http://127.0.0.1:3010`).
 2. **Local Proxy (LiteLLM)** translates Anthropic Messages API calls and forwards them to your selected models on OpenRouter.
 3. **Live pricing** appears directly in Claude's model picker — you see cost per token before you pick.
 
-On macOS, 3P mode runs from `~/Library/Application Support/Claude-3p/`. On Linux, `~/.config/Claude-3p/`. The regular (1P) mode you're used to stays untouched — you switch between them with one command.
+On macOS, 3P runs from `~/Library/Application Support/Claude-3p/`. On Linux, `~/.config/Claude-3p/`. Your 1P mode stays untouched — you switch between them with one command.
 
 ---
 
@@ -86,7 +86,7 @@ Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a fr
 
 ---
 
-## Switching Back to Regular Claude
+## Switching Back to 1P
 
 When your weekly Claude credits reset, switch back to your subscription:
 
@@ -96,7 +96,7 @@ When your weekly Claude credits reset, switch back to your subscription:
 
 Your sessions, sidebar, and project groupings are synced automatically during the switch so nothing is lost.
 
-And when your usage runs out again, switch back to Gateway mode:
+And when your usage runs out again, switch back to 3P:
 
 ```bash
 ./claude-any-model switch gateway
@@ -115,9 +115,9 @@ Check the active mode and proxy health at any time:
 ./claude-any-model install            # Full setup: venv, API key, model picker, daemon
 ./claude-any-model launch             # Launch Claude CLI routed through the local proxy
 ./claude-any-model models             # Reconfigure tier models (live OpenRouter prices)
-./claude-any-model switch [mode]      # Toggle between 'gateway' and 'regular' Claude mode
-./claude-any-model sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P modes
-./claude-any-model status             # Check active mode, daemon health, and Claude 3P profile
+./claude-any-model switch [mode]      # Switch between 1P (regular) and 3P (proxy) mode
+./claude-any-model sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P
+./claude-any-model status             # Check active mode, daemon health, and 3P profile
 ./claude-any-model restart            # Restart local gateway daemon
 ./claude-any-model uninstall          # Stop and remove background service
 ```
