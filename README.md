@@ -12,9 +12,9 @@ Route Claude Desktop and Claude CLI requests to any model — hundreds of cloud 
 
 ## What is This?
 
-Anthropic includes a **Third-Party Inference** mode in Claude Desktop designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
+Anthropic includes a **Third-Party Inference** mode (called **3P mode** internally) in Claude Desktop, designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). When 3P mode is active, Claude Desktop runs from an isolated `~/Library/Application Support/Claude-3p/` directory instead of the default `~/Library/Application Support/Claude/`. However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
 
-`claude-any-model` breaks this lock-in:
+`claude-any-model` breaks this lock-in by using 3P mode as the entry point:
 
 * **Use Any Model in Claude Desktop**: Seamlessly maps Claude's model picker to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, GLM-5.2, Llama 3.3, and Mistral).
 * **Cut Inference Costs by 80–95%**: Run state-of-the-art coding and reasoning models at pennies per million tokens (e.g., Qwen3-Coder at $0.12/1M input vs. Claude 3.5 Sonnet at $3.00/1M).
@@ -66,9 +66,11 @@ In addition to OpenRouter's cloud catalog, you can route Claude Desktop and Clau
 
 ## Gateway Mode Setup in Claude Desktop
 
+Gateway mode is Claude Desktop's **3P mode** (Third-Party Inference) configured to route through the local proxy. Regular mode (1P) uses your native Anthropic account directly.
+
 ### Automated Configuration (Recommended)
 
-Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon and Claude Desktop's active profile in `~/Library/Application Support/Claude-3p/configLibrary/`.
+Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon and Claude Desktop's 3P profile in `~/Library/Application Support/Claude-3p/configLibrary/`.
 
 ### Manual GUI Verification
 
@@ -84,7 +86,7 @@ If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inf
 
 ## Migrating Existing Sessions to Gateway Mode
 
-When transitioning from standard (Anthropic-direct) mode to Gateway mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default.
+When transitioning from standard (1P, Anthropic-direct) mode to Gateway (3P) mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default. The `sync-sessions` step (run automatically during `./setup.sh install` and `./setup.sh switch`) handles this by two-way merging session metadata and sidebar groupings between the two modes.
 
 ### 1. Enable the Import Feature in Your 3P Profile
 
@@ -117,15 +119,21 @@ Your historical sessions, custom titles, and project groupings will immediately 
 
 ## Switching Between Gateway Mode and Regular Claude
 
-You can toggle between **Gateway Mode** (OpenRouter proxy) and **Regular Claude** (official Anthropic account) with a single command:
+You can toggle between **Gateway Mode** (3P — OpenRouter proxy) and **Regular Claude** (1P — official Anthropic account) with a single command:
 
 ```bash
-# Toggle between Gateway and Regular Claude
+# Toggle between Gateway (3P) and Regular (1P) Claude
 ./setup.sh switch
 
 # Or explicitly switch to a specific mode:
-./setup.sh switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team
-./setup.sh switch gateway    # Activates OpenRouter proxy mode
+./setup.sh switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team (1P)
+./setup.sh switch gateway    # Activates OpenRouter proxy mode (3P)
+```
+
+Both modes prompt you to sync sessions and sidebar groupings so your session history, titles, and categories stay mirrored across modes. You can also sync manually at any time:
+
+```bash
+./setup.sh sync-sessions
 ```
 
 Check the active mode and proxy health at any time:
