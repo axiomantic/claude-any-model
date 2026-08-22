@@ -90,7 +90,7 @@ import urllib.request
 from datetime import datetime
 
 # Script & Daemon Metadata
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-any-model"
@@ -224,7 +224,7 @@ def validate_openrouter_key(api_key):
         "https://openrouter.ai/api/v1/auth/key",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Claude-Any-Model/1.11.0"
+            "User-Agent": "Claude-Any-Model/1.12.0"
         }
     )
     try:
@@ -434,7 +434,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-Any-Model/1.11.0"}
+        headers={"User-Agent": "Claude-Any-Model/1.12.0"}
     )
     catalog = {}
     try:
@@ -1086,6 +1086,226 @@ def get_active_claude_mode():
         pass
     return "regular"
 
+def _detect_account_uuid(config_path):
+    """Extract account UUID from a claude_desktop_config.json's epitaxyPrefs keys."""
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        epi = cfg.get("preferences", {}).get("epitaxyPrefs", {})
+        for key in epi:
+            if key.startswith("epitaxy-perm-mode-acks."):
+                return key.split(".")[-1]
+    except Exception:
+        pass
+    return None
+
+def _scan_session_dir(sessions_root, account_uuid):
+    """Scan a claude-code-sessions directory for session JSON files.
+
+    Returns {sessionId: {"path": path, "lastActivityAt": int, "data": dict}}.
+    """
+    sessions = {}
+    if not account_uuid:
+        return sessions
+    account_dir = os.path.join(sessions_root, account_uuid)
+    if not os.path.isdir(account_dir):
+        return sessions
+    for workspace in os.listdir(account_dir):
+        ws_dir = os.path.join(account_dir, workspace)
+        if not os.path.isdir(ws_dir):
+            continue
+        for fname in os.listdir(ws_dir):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(ws_dir, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                sid = data.get("sessionId")
+                if not sid:
+                    continue
+                last_activity = data.get("lastActivityAt", 0)
+                sessions[sid] = {
+                    "path": fpath,
+                    "lastActivityAt": last_activity,
+                    "data": data,
+                    "workspace": workspace,
+                }
+            except Exception:
+                pass
+    return sessions
+
+def _read_group_scopes(config_path):
+    """Read dframe-group-scopes and starred sessions from a claude_desktop_config.json."""
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        epi = cfg.get("preferences", {}).get("epitaxyPrefs", {})
+        return {
+            "dframe-group-scopes": epi.get("dframe-group-scopes", {}),
+            "starred-local-code-sessions": set(epi.get("starred-local-code-sessions", [])),
+        }
+    except Exception:
+        return {"dframe-group-scopes": {}, "starred-local-code-sessions": set()}
+
+def sync_sessions():
+    """Two-way merge of session metadata and sidebar groupings between 1P and 3P modes.
+
+    Merges by sessionId (newer lastActivityAt wins on conflict).
+    Unions group assignments and starred sessions (account-agnostic keys).
+    Shows a stats preview and prompts before making changes.
+    """
+    claude_1p_support = os.path.expanduser("~/Library/Application Support/Claude")
+    claude_3p_support = os.path.expanduser("~/Library/Application Support/Claude-3p")
+    cfg_1p = os.path.join(claude_1p_support, "claude_desktop_config.json")
+    cfg_3p = os.path.join(claude_3p_support, "claude_desktop_config.json")
+    sessions_1p_root = os.path.join(claude_1p_support, "claude-code-sessions")
+    sessions_3p_root = os.path.join(claude_3p_support, "claude-code-sessions")
+
+    acct_1p = _detect_account_uuid(cfg_1p)
+    acct_3p = _detect_account_uuid(cfg_3p)
+
+    if not acct_1p and not acct_3p:
+        warn("Could not detect account UUIDs from either claude_desktop_config.json.")
+        warn("Make sure Claude Desktop has been launched at least once in both modes.")
+        return
+
+    header("Session Sync (1P ↔ 3P)")
+
+    sessions_1p = _scan_session_dir(sessions_1p_root, acct_1p)
+    sessions_3p = _scan_session_dir(sessions_3p_root, acct_3p)
+
+    all_sids = set(sessions_1p.keys()) | set(sessions_3p.keys())
+    only_1p = []
+    only_3p = []
+    updated = []
+    unchanged = 0
+
+    for sid in all_sids:
+        in_1p = sid in sessions_1p
+        in_3p = sid in sessions_3p
+        if in_1p and not in_3p:
+            only_1p.append(sid)
+        elif in_3p and not in_1p:
+            only_3p.append(sid)
+        else:
+            t1 = sessions_1p[sid]["lastActivityAt"]
+            t3 = sessions_3p[sid]["lastActivityAt"]
+            if t1 > t3:
+                updated.append((sid, "1p→3p"))
+            elif t3 > t1:
+                updated.append((sid, "3p→1p"))
+            else:
+                unchanged += 1
+
+    # Compute group assignment merge
+    groups_1p = _read_group_scopes(cfg_1p)
+    groups_3p = _read_group_scopes(cfg_3p)
+
+    new_assignments_1p = 0
+    new_assignments_3p = 0
+    for scope_key in set(groups_1p["dframe-group-scopes"].keys()) | set(groups_3p["dframe-group-scopes"].keys()):
+        a1 = groups_1p["dframe-group-scopes"].get(scope_key, {}).get("assignments", {})
+        a3 = groups_3p["dframe-group-scopes"].get(scope_key, {}).get("assignments", {})
+        new_assignments_1p += len(set(a3.keys()) - set(a1.keys()))
+        new_assignments_3p += len(set(a1.keys()) - set(a3.keys()))
+
+    new_starred_1p = len(groups_3p["starred-local-code-sessions"] - groups_1p["starred-local-code-sessions"])
+    new_starred_3p = len(groups_1p["starred-local-code-sessions"] - groups_3p["starred-local-code-sessions"])
+
+    total_actions = len(only_1p) + len(only_3p) + len(updated) + new_assignments_1p + new_assignments_3p + new_starred_1p + new_starred_3p
+
+    if total_actions == 0:
+        success("Sessions and groupings are already in sync. No changes needed.")
+        return
+
+    print("", file=sys.stderr)
+    print(f"  Sessions only in Gateway (3P):     {len(only_3p):>4}  → will copy to Regular (1P)", file=sys.stderr)
+    print(f"  Sessions only in Regular (1P):    {len(only_1p):>4}  → will copy to Gateway (3P)", file=sys.stderr)
+    print(f"  Sessions updated (newer activity): {len(updated):>4}  → will overwrite older copy", file=sys.stderr)
+    print(f"  Sessions unchanged:                {unchanged:>4}  → no action", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"  Group assignments to merge:        {new_assignments_1p + new_assignments_3p:>4}  new → will add to both", file=sys.stderr)
+    print(f"  Starred sessions to merge:          {new_starred_1p + new_starred_3p:>4}  new → will add to both", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    ans = safe_input("Sync sessions between modes? (Y/n): ", "y").lower()
+    if ans not in ("y", "yes", ""):
+        info("Session sync skipped.")
+        return
+
+    # ── Execute: copy session files ───────────────────────────────────────────
+    def _ensure_target_dir(sessions_root, account_uuid, workspace):
+        d = os.path.join(sessions_root, account_uuid, workspace)
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    # Copy 1P-only → 3P
+    for sid in only_1p:
+        src = sessions_1p[sid]
+        target_dir = _ensure_target_dir(sessions_3p_root, acct_3p, src["workspace"])
+        target_path = os.path.join(target_dir, os.path.basename(src["path"]))
+        shutil.copy2(src["path"], target_path)
+
+    # Copy 3P-only → 1P
+    for sid in only_3p:
+        src = sessions_3p[sid]
+        target_dir = _ensure_target_dir(sessions_1p_root, acct_1p, src["workspace"])
+        target_path = os.path.join(target_dir, os.path.basename(src["path"]))
+        shutil.copy2(src["path"], target_path)
+
+    # Update conflicting sessions (newer wins)
+    for sid, direction in updated:
+        if direction == "1p→3p":
+            src = sessions_1p[sid]
+            target_dir = _ensure_target_dir(sessions_3p_root, acct_3p, src["workspace"])
+            shutil.copy2(src["path"], os.path.join(target_dir, os.path.basename(src["path"])))
+        else:
+            src = sessions_3p[sid]
+            target_dir = _ensure_target_dir(sessions_1p_root, acct_1p, src["workspace"])
+            shutil.copy2(src["path"], os.path.join(target_dir, os.path.basename(src["path"])))
+
+    # ── Execute: merge group assignments ─────────────────────────────────────
+    for config_path, groups_local, groups_remote, acct_local in [
+        (cfg_1p, groups_1p, groups_3p, acct_1p),
+        (cfg_3p, groups_3p, groups_1p, acct_3p),
+    ]:
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            epi = cfg.setdefault("preferences", {}).setdefault("epitaxyPrefs", {})
+
+            # Merge dframe-group-scopes
+            local_scopes = epi.get("dframe-group-scopes", {})
+            for scope_key in set(local_scopes.keys()) | set(groups_remote["dframe-group-scopes"].keys()):
+                local_scope = local_scopes.get(scope_key, {"groups": [], "assignments": {}})
+                remote_scope = groups_remote["dframe-group-scopes"].get(scope_key, {"groups": [], "assignments": {}})
+                # Union groups (dedupe by group id)
+                local_groups = local_scope.get("groups", [])
+                remote_groups = remote_scope.get("groups", [])
+                seen_ids = {g.get("id") for g in local_groups}
+                for g in remote_groups:
+                    if g.get("id") not in seen_ids:
+                        local_groups.append(g)
+                        seen_ids.add(g.get("id"))
+                local_scope["groups"] = local_groups
+                # Union assignments
+                local_scope.setdefault("assignments", {}).update(remote_scope.get("assignments", {}))
+                local_scopes[scope_key] = local_scope
+            epi["dframe-group-scopes"] = local_scopes
+
+            # Merge starred sessions
+            local_starred = set(epi.get("starred-local-code-sessions", []))
+            local_starred.update(groups_remote["starred-local-code-sessions"])
+            epi["starred-local-code-sessions"] = sorted(local_starred)
+
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception as e:
+            warn(f"Could not update {config_path}: {e}")
+
+    success("Session sync complete.")
+
 def switch_claude_mode(target_mode="toggle"):
     current = get_active_claude_mode()
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
@@ -1141,6 +1361,7 @@ def switch_claude_mode(target_mode="toggle"):
         success("Switched Claude Desktop to REGULAR (Official Anthropic) Mode.")
         print("\033[1;32m[STATUS]\033[0m Claude Desktop will now use your native Anthropic account directly.")
         print("\033[1;36m[PRESERVED]\033[0m All OpenRouter API keys, model mappings, and third-party profiles remain safely stored.\n", file=sys.stderr)
+        sync_sessions()
         post_setup_prompt()
 
     elif target_mode == "gateway":
@@ -1202,6 +1423,7 @@ def switch_claude_mode(target_mode="toggle"):
         success(f"Switched Claude Desktop to GATEWAY MODE (Profile ID: {profile_id}).")
         print(f"\033[1;32m[STATUS]\033[0m Claude Desktop is now routed through LiteLLM on http://127.0.0.1:{PORT}\n", file=sys.stderr)
         configure_sandbox_network()
+        sync_sessions()
         post_setup_prompt()
 
 def status_service():
@@ -1504,6 +1726,7 @@ def usage():
     print("  stop           - Stops the launchd daemon", file=sys.stderr)
     print("  restart        - Restarts the launchd daemon", file=sys.stderr)
     print("  uninstall      - Unregisters launchd daemon", file=sys.stderr)
+    print("  sync-sessions  - Merge session metadata and sidebar groupings between 1P and 3P modes", file=sys.stderr)
     print("  version        - Displays the current proxy script version", file=sys.stderr)
     sys.exit(1)
 
@@ -1513,6 +1736,8 @@ def main():
     if cmd in ("switch", "mode", "toggle"):
         target = sys.argv[2] if len(sys.argv) > 2 else "toggle"
         switch_claude_mode(target)
+    elif cmd in ("sync-sessions", "sync"):
+        sync_sessions()
     elif cmd in ("launch", "run"):
         launch_claude_cli(extra_args=sys.argv[2:])
     elif cmd == "install":

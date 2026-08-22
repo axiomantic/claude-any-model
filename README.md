@@ -142,6 +142,7 @@ Check the active mode and proxy health at any time:
 ./setup.sh launch             # Launch Claude CLI routed through the local proxy
 ./setup.sh models             # Reconfigure tier models (live OpenRouter prices)
 ./setup.sh switch [mode]      # Toggle between 'gateway' and 'regular' Claude mode
+./setup.sh sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P modes
 ./setup.sh status             # Check active mode, daemon health, and Claude 3P profile
 ./setup.sh restart            # Restart local gateway daemon
 ./setup.sh uninstall          # Stop and remove background service
