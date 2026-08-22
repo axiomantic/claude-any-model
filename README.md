@@ -6,26 +6,37 @@
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
 [![Release](https://img.shields.io/github/v/release/axiomantic/claude-any-model?include_prereleases&color=green)](https://github.com/axiomantic/claude-any-model/releases)
 
-Route Claude Desktop and Claude CLI requests to any model — hundreds of cloud models via OpenRouter, or your own local engines (Ollama, LM Studio, vLLM) — with live token pricing shown directly in Claude's model picker.
+Keep coding in Claude Desktop and Claude Code after you hit your weekly Claude credit limit — without the prohibitive overage costs.
 
 ---
 
-## What is This?
+## Why This Exists
 
-Anthropic includes a **Third-Party Inference** mode (called **3P mode** internally) in Claude Desktop, designed for enterprise deployments (such as AWS Bedrock, Google Cloud Vertex AI, or private VPCs). When 3P mode is active, Claude Desktop runs from an isolated 3P directory instead of the default 1P directory — on macOS this is `~/Library/Application Support/Claude-3p/` vs `~/Library/Application Support/Claude/`, and on Linux it is `~/.config/Claude-3p/` vs `~/.config/Claude/`. However, out of the box, this feature is strictly limited to **Anthropic models** — you can choose *where* your Claude models are hosted, but you are still locked into official Anthropic models at standard pricing.
+You're on a Claude Max plan. You hit your weekly credit limit. The work isn't done. Your options:
 
-`claude-any-model` breaks this lock-in by using 3P mode as the entry point:
+1. **Pay Claude overage rates** — $15-25 per million output tokens. A full day of coding can cost hundreds of dollars.
+2. **Switch to a different coding harness** (OpenCode, Cursor, Pi) — but your Claude subscription doesn't work there, and handing off sessions between tools is a context-loss dance you shouldn't have to do.
+3. **Stop working.**
 
-* **Use Any Model in Claude Desktop**: Seamlessly maps Claude's model picker to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, GLM-5.2, Llama 3.3, and Mistral). 
-* **Cut Inference Costs by 80–95%**: Run state-of-the-art coding and reasoning models at pennies per million tokens (e.g., Qwen3-Coder at $0.12/1M input vs. Claude 3.5 Sonnet at $3.00/1M).
-* **Live Pricing in the Model Picker**: Displays real-time OpenRouter token pricing and context window limits directly in Claude Desktop's dropdown UI (e.g., `Qwen3 Coder ($0.12/$0.80) [262k]`).
-* **Keep Native Claude Features**: Full support for chat history, markdown artifacts, project folders, code execution sessions, and file attachments.
-* **Works with Claude CLI**: Route terminal `claude` CLI coding sessions through the same local proxy.
+None of these are good. This project exists for option four:
 
-### How It Works
+4. **Stay in Claude Code and Claude Desktop. Route the same requests to any model on OpenRouter** — at 80-95% lower cost. Your sessions, projects, sidebar, and workflow don't change. You just stop paying Claude's per-token overage and start paying the open market rate.
 
-1. **Claude Desktop or CLI** sends requests to a lightweight local gateway running on your machine (`http://127.0.0.1:3010`).
-2. **Local Proxy (LiteLLM)** translates Anthropic Messages API requests and forwards them to your selected models on OpenRouter.
+A typical day of coding that would cost $50-200+ in Claude overage costs $2-5 on OpenRouter with equivalent-quality models.
+
+---
+
+## How It Works
+
+Claude Desktop has a built-in **Third-Party Inference** mode (called **3P mode**) intended for enterprise deployments (AWS Bedrock, Vertex AI, etc.). Out of the box, 3P mode only supports Anthropic models — you pick *where* they're hosted, not *which* models.
+
+`claude-any-model` uses 3P mode as the entry point and swaps in any model:
+
+1. **Claude Desktop or CLI** sends requests to a lightweight local gateway (`http://127.0.0.1:3010`).
+2. **Local Proxy (LiteLLM)** translates Anthropic Messages API calls and forwards them to your selected models on OpenRouter.
+3. **Live pricing** appears directly in Claude's model picker — you see cost per token before you pick.
+
+On macOS, 3P mode runs from `~/Library/Application Support/Claude-3p/`. On Linux, `~/.config/Claude-3p/`. The regular (1P) mode you're used to stays untouched — you switch between them with one command.
 
 ---
 
@@ -41,25 +52,53 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/cl
 
 ---
 
-## Curated Model Tiers
+## Model Recommendations
 
-| Tier | Claude Alias | Recommended Target | Price (In / Out per 1M) | Context | Strength |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Opus** | `claude-opus-4` | **Kimi K3** (`moonshotai/kimi-k3`) | **$3.00 / $15.00** | 1M | 2.8T MoE Heavyweight Reasoning |
-| **Sonnet** | `claude-sonnet-4-5` | **Qwen3 Coder Next** (`qwen/qwen3-coder-next`) | **$0.12 / $0.80** | 262k | Fast Agentic Coder Workhorse |
-| **Haiku** | `claude-3-haiku-20240307` | **DeepSeek V4 Flash** (`deepseek/deepseek-v4-flash`) | **$0.08 / $0.17** | 1M | 13B Active MoE, Maximum Economy |
-| **Fable** | `claude-fable-5` | **GLM-5.2** (`z-ai/glm-5.2`) | **$0.97 / $3.04** | 1M | 744B MoE Multi-Step Agent Runner |
-| **Mythos** | `claude-mythos-1` | **Claude Opus 5 / Kimi K3 Ultra** | **$3.00 – $5.00** | 1M | Frontier Multi-Agent Coordination |
+Each Claude tier is mapped to a recommended OpenRouter model. The tier names are what Claude Desktop and Claude Code send internally — you'll see them in the model picker with live pricing.
 
----
+### Daily coding (Sonnet tier)
 
-## Universal Providers & Local Inference (Ollama, LM Studio, vLLM)
+The workhorse tier. What you'll use 90% of the time for coding, agentic tasks, and iteration.
 
-In addition to OpenRouter's cloud catalog, you can route Claude Desktop and Claude CLI to **local offline inference engines**:
+**Qwen3 Coder Next** — `$0.12 input / $0.80 output per 1M tokens` — 262k context
 
-* **Ollama Auto-Discovery**: If Ollama is running (`http://localhost:11434`), `./claude-any-model models` automatically detects your installed models (e.g., `qwen2.5-coder`, `deepseek-r1`) and makes them selectable with `$0.00 / Local` pricing.
-* **LM Studio & vLLM**: Connects to any local OpenAI-compatible endpoint on custom ports (`http://localhost:1234/v1` or `http://localhost:8000/v1`).
-* **Hybrid / Mix & Match**: Assign local models for unlimited free coding iterations (Sonnet / Haiku tiers) while routing heavyweight architectural queries to OpenRouter (Opus tier).
+Compared to Claude Sonnet at `$3.00 / $15.00`, a full day of coding that would cost ~$50-100 in Claude overage costs roughly $1-3 here. This is the main reason to use this project.
+
+### Heavy reasoning (Opus tier)
+
+For architecture decisions, complex debugging, and deep analysis where you'd normally reach for Opus.
+
+**Kimi K3** — `$3.00 / $15.00` — 1M context
+
+Priced the same as Claude Opus 4 but with a 1M context window. Use when Sonnet-tier models aren't cutting it.
+
+### Quick tasks (Haiku tier)
+
+Fast and cheap. Code completions, simple questions, formatting.
+
+**DeepSeek V4 Flash** — `$0.08 / $0.17` — 1M context
+
+Costs so little it's effectively free. A million output tokens for 17 cents.
+
+### Multi-step agents (Fable tier)
+
+For multi-step agent workflows that need sustained reasoning across long contexts.
+
+**GLM-5.2** — `$0.97 / $3.04` — 1M context
+
+A mid-range option that balances cost and capability for agentic runs.
+
+### Frontier (Mythos tier)
+
+When you want the absolute best available, or need native Claude compatibility for a specific task.
+
+**Claude Opus 5** — `$5.00 / $25.00` — 1M context
+
+This is Claude itself via OpenRouter. Use when you need guaranteed Claude behavior and are OK paying for it.
+
+### Local inference (all tiers)
+
+If Ollama is running, `./claude-any-model models` auto-discovers your local models and offers them as free alternatives at any tier. LM Studio and vLLM are also supported on any OpenAI-compatible endpoint.
 
 ---
 
