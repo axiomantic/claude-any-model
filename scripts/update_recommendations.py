@@ -146,7 +146,7 @@ def perform_llm_comparative_analysis(api_key, current_tiers, catalog_map, compac
         if not models_to_try:
             models_to_try = preferred_candidates
 
-    system_prompt = f"""You are a principal AI infrastructure architect performing an in-depth weekly review and comparative delta evaluation of AI inference models as of {today_str}.
+    system_prompt = f"""You are an elite AI systems and LLM infrastructure architect conducting a scheduled comparative evaluation of inference models on OpenRouter for integration into the 'claude-threepio' proxy.
 
 You are provided with:
 1. THE CURRENTLY ACTIVE TIER CONFIGURATION from claude-threepio (what users currently see and use).
@@ -162,10 +162,11 @@ Anthropic Target Aliases:
 - Mythos Tier (claude-mythos-1): Frontier & experimental flagships.
 
 Instructions:
-1. Use online web search to research recent benchmark rankings (LiveBench, SWE-bench Verified, Arena Elo, Chatbot Arena, Artificial Analysis) and recent major releases (OpenAI, Anthropic, DeepSeek, Moonshot/Kimi, Zhipu/GLM, Qwen/Alibaba, Google, Meta, etc.).
-2. PRICE DIVERSITY REQUIREMENT:
-   Do NOT select only top expensive models. For EACH tier, curate a balanced spectrum across the 4-5 options:
-   - Budget / High-Economy Option: Lowest possible token price (e.g. sub-$0.10/M for Haiku/Sonnet, sub-$1.50/M MoE for Opus/Fable).
+1. Use online web search to research recent benchmark rankings (LiveBench, SWE-bench Verified, Arena Elo, Chatbot Arena, Artificial Analysis) and recent major releases (OpenAI, Anthropic, DeepSeek, Moonshot/Kimi, Zhipu/GLM, Qwen/Alibaba, Google, Meta, NVIDIA, Poolside, etc.).
+2. PRICE DIVERSITY & TIER SPECTRUM REQUIREMENT:
+   For EACH tier, curate a balanced spectrum across the curated options:
+   - Free / Zero-Cost Option: Top $0.00 models from OpenRouter's free collection (e.g. models with :free or $0.00 pricing such as Nemotron 3 Ultra 550B, Ox Alpha, North Mini Code, Laguna S, Inkling Small, etc.).
+   - Budget / High-Economy Option: Ultra-low token price (e.g. sub-$0.10/M for Haiku/Sonnet, sub-$1.50/M MoE for Opus/Fable).
    - Value Workhorse (Default/Recommended): Optimal benchmark score per dollar.
    - High-Throughput / Specialist: Fast, reliable tool calling, SWE-bench coding leader.
    - Frontier Ceiling Option: Highest capability ceiling for users prioritizing maximum reasoning.
@@ -217,7 +218,7 @@ JSON Format Schema:
 
     user_prompt = f"""Current Date: {today_str}
 
-CURRENT ACTIVE SETUP.SH CONFIGURATION:
+CURRENT ACTIVE CLAUDE-THREEPIO CONFIGURATION:
 {json.dumps(current_tiers, indent=2)}
 
 AVAILABLE LIVE OPENROUTER CATALOG:

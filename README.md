@@ -52,37 +52,17 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-threepio/main/cla
 
 ---
 
-## Model Tiers
+## Model Selection & Tiers
 
-Each Claude tier maps to a set of OpenRouter models. The recommended pick is marked with **bold**. Run `./claude-threepio models` to choose from these or set your own custom model.
+`claude-threepio` maps Anthropic tiers (**Opus**, **Sonnet**, **Haiku**, **Fable**, and **Mythos**) to curated, high-efficiency models with real-time pricing and capabilities fetched live from OpenRouter:
 
-| Tier | Best For | Model | Price (per 1M in/out) | Context |
-|------|----------|-------|-----------------------|---------|
-| Sonnet | Daily coding, agentic tasks | **Qwen3 Coder Next** | $0.12 / $0.80 | 262k |
-| | | Claude Sonnet 4 | $3.00 / $15.00 | 1M |
-| | | DeepSeek V3 | $0.26 / $1.03 | 163k |
-| | | Qwen3 Coder Flash | $0.20 / $0.97 | 1M |
-| Opus | Architecture, deep reasoning | **Kimi K3** | $3.00 / $15.00 | 1M |
-| | | GLM-5.2 | $0.97 / $3.04 | 1M |
-| | | GPT-5.6 Terra | $2.00 / $12.00 | 1M |
-| | | DeepSeek V4 Pro | $1.19 / $3.56 | 1M |
-| | | Claude Sonnet 4.6 | $3.00 / $15.00 | 1M |
-| Haiku | Quick tasks, completions | **DeepSeek V4 Flash** | $0.08 / $0.17 | 1M |
-| | | Gemini 2.0 Flash | $0.10 / $0.40 | 1M |
-| | | Qwen3 Coder 30B | $0.07 / $0.28 | 262k |
-| | | GPT-5.6 Luna | $0.20 / $1.20 | 1M |
-| Fable | Multi-step agents, long context | **GLM-5.2** | $0.97 / $3.04 | 1M |
-| | | Kimi K3 | $3.00 / $15.00 | 1M |
-| | | DeepSeek V4 Pro | $1.19 / $3.56 | 1M |
-| | | GPT-5.6 Terra | $2.00 / $12.00 | 1M |
-| Mythos | Frontier, Claude-native | **Claude Opus 5** | $5.00 / $25.00 | 1M |
-| | | Kimi K3 Ultra | $3.00 / $15.00 | 1M |
-| | | DeepSeek V4 Pro (Max) | $1.19 / $3.56 | 1M |
-| | | GLM-5.2 (Reasoning) | $0.97 / $3.04 | 1M |
+* **Paid Workhorses**: Top-ranking models for reasoning, agentic tool use, and coding (e.g. DeepSeek V4 Pro, Gemini 3.7 Flash, Qwen 3.7 Flash, GLM-5.2) at 80–95% lower cost than Claude overages.
+* **$0.00 Free Models**: Curated zero-cost community models from [OpenRouter's Free Collection](https://openrouter.ai/collections/free-models) (e.g. Nemotron 3 Ultra 550B, Ox Alpha, North Mini Code, Laguna S, Inkling Small).
+* **Custom Models & Endpoints**: You can specify **any custom OpenRouter model ID** or connect directly to **any OpenAI-compatible endpoint** (local Ollama, LM Studio, vLLM, Aphrodite, LocalAI, or custom gateways).
+* **Interactive 2-Pane TUI**: Run `./claude-threepio models` to launch the interactive selector. The left pane lists models grouped by provider, while the right pane shows real-time metadata, live pricing, context window length, 1M context agent support, and capability descriptions as you navigate.
 
-For comparison, Claude's own overage rates are $15-25 per million output tokens. The Sonnet-tier Qwen3 Coder Next at $0.80 output is the main reason to use this project — a full day of coding that would cost ~$50-100 in overage costs roughly $1-3.
+For comparison, Claude's native overage rates are $15–$25 per million output tokens. Switching to high-throughput models like DeepSeek V4 Flash ($0.08/$0.15) or Qwen 3.7 Flash ($0.03/$0.13) reduces daily token expenses from $50–$100+ down to $1–$3.
 
-Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a free option at any tier.
 
 ---
 
