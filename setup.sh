@@ -1227,10 +1227,6 @@ def sync_sessions():
 
     total_actions = len(only_1p) + len(only_3p) + len(updated) + new_assignments_1p + new_assignments_3p + new_starred_1p + new_starred_3p
 
-    if total_actions == 0:
-        success("Sessions and groupings are already in sync. No changes needed.")
-        return
-
     print("", file=sys.stderr)
     print(f"  Sessions only in Gateway (3P):     {len(only_3p):>4}  → will copy to Regular (1P)", file=sys.stderr)
     print(f"  Sessions only in Regular (1P):    {len(only_1p):>4}  → will copy to Gateway (3P)", file=sys.stderr)
@@ -1241,10 +1237,15 @@ def sync_sessions():
     print(f"  Starred sessions to merge:          {new_starred_1p + new_starred_3p:>4}  new → will add to both", file=sys.stderr)
     print("", file=sys.stderr)
 
+    if total_actions == 0:
+        success("Sessions and groupings are already in sync. No changes needed.")
+        return
+
     ans = safe_input("Sync sessions between modes? (Y/n): ", "y").lower()
     if ans not in ("y", "yes", ""):
         info("Session sync skipped.")
         return
+
 
     # ── Execute: copy session files ───────────────────────────────────────────
     def _ensure_target_dir(sessions_root, account_uuid, workspace):
