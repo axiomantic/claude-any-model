@@ -914,12 +914,12 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 pass
 
             if show_preview and max_x >= 70:
-                left_w = min(74, max(56, int(max_x * 0.48)))
-                if max_x < 85:
-                    left_w = max(38, max_x - 26)
+                left_w = min(84, max(68, int(max_x * 0.52)))
+                if max_x < 90:
+                    left_w = max(42, max_x - 24)
                 divider_x = left_w + 1
                 right_x = divider_x + 2
-                right_w = max(22, max_x - right_x - 1)
+                right_w = max(20, max_x - right_x - 1)
             else:
                 left_w = max_x - 2
                 divider_x = None
@@ -981,15 +981,17 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                         badges.append("[FREE]")
                     badge_str = " ".join(badges)
 
-                    fixed_w = 2 + len(num_str) + 1 + 12 + (len(ctx_short) + 1 if ctx_short else 0) + (len(badge_str) + 1 if badge_str else 0)
-                    avail_name_w = max(12, left_w - fixed_w - 2)
-                    short_name = (name_str[:avail_name_w - 1] + "…") if len(name_str) > avail_name_w else name_str
+                    # Fixed column widths for crisp vertical table alignment
+                    col_name_w = 28
+                    if left_w < 74:
+                        col_name_w = max(16, left_w - 7 - 13 - 8 - 14)
+
+                    short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
+                    price_part = f"{price_str:<13}" if price_str else (" " * 13)
+                    ctx_part = f"{ctx_short:<8}" if ctx_short else (" " * 8)
 
                     cursor_char = "▶" if is_active else " "
-                    ctx_part = f"{ctx_short:<7}" if ctx_short else ""
-                    price_part = f"{price_str:<12}" if price_str else ""
-                    badge_part = f" {badge_str}" if badge_str else ""
-                    row_content = f" {cursor_char} {num_str} {short_name:<{avail_name_w}} {price_part} {ctx_part}{badge_part}"
+                    row_content = f" {cursor_char} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
                     padded_row = row_content.ljust(left_w)[:left_w]
 
                     try:
