@@ -774,101 +774,197 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
         "desc": curated_desc or "",
     }
 
-def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_idx, recommended_idx, current_model_id):
-    """Interactive 2-pane curses TUI model selector.
-    
-    Left pane: Scrollable model list grouped by provider with highlight navigation.
-    Right pane: Live metadata and description inspector for the selected model.
-    """
+TIER_FAMILY_SLOTS = {
+        "opus": [
+            ("claude-opus-4", "Primary Opus Dropdown", ["claude-opus-4", "claude-opus-4-5", "claude-opus-5", "claude-opus", "claude-opus-latest"]),
+            ("claude-3-opus-20240229", "Claude 3 Opus (20240229)", ["claude-3-opus-20240229", "claude-3-opus"]),
+            ("claude-3-opus-latest", "Claude 3 Opus Latest", ["claude-3-opus-latest", "claude-opus-3"]),
+        ],
+        "sonnet": [
+            ("claude-sonnet-4-5", "Primary Sonnet Dropdown", ["claude-sonnet-4-5", "claude-sonnet-5", "claude-sonnet-latest", "claude-sonnet"]),
+            ("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet (20250219)", ["claude-3-7-sonnet-20250219", "claude-3-7-sonnet-latest", "claude-3-7-sonnet"]),
+            ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (20241022)", ["claude-3-5-sonnet-20241022", "claude-3-5-sonnet-latest", "claude-3-5-sonnet"]),
+            ("claude-sonnet-4", "Claude Sonnet 4", ["claude-sonnet-4", "claude-3-5-sonnet-20240620", "claude-3-sonnet-20240229", "claude-3-sonnet"]),
+        ],
+        "haiku": [
+            ("claude-3-haiku-20240307", "Primary Haiku Dropdown", ["claude-3-haiku-20240307", "claude-3-haiku", "claude-3-haiku-latest", "claude-haiku-4-5", "claude-haiku-4", "claude-haiku"]),
+            ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku (20241022)", ["claude-3-5-haiku-20241022", "claude-3-5-haiku-latest", "claude-3-5-haiku"]),
+            ("claude-instant-1.2", "Claude Instant 1.2", ["claude-instant-1.2", "claude-instant"]),
+        ],
+        "fable": [
+            ("claude-fable-5", "Primary Fable Dropdown", ["claude-fable-5", "claude-fable-latest", "claude-fable"]),
+            ("claude-fable-preview", "Claude Fable Preview", ["claude-fable-preview"]),
+        ],
+        "mythos": [
+            ("claude-mythos-1", "Primary Mythos Dropdown", ["claude-mythos-1", "claude-mythos-latest", "claude-mythos"]),
+            ("claude-mythos-preview", "Claude Mythos Preview", ["claude-mythos-preview"]),
+        ],
+    }
+
+def build_all_slot_mappings(tier_selections):
+    """Generate complete slot mapping list, alias normalization map, and canonical set."""
+    all_mappings = []
+    alias_map = {}
+    canonical_names = set()
+
+    for tier_name, selected_models in tier_selections.items():
+        slots = TIER_FAMILY_SLOTS.get(tier_name, [])
+        if not selected_models:
+            continue
+
+        for idx, model_entry in enumerate(selected_models):
+            if idx >= len(slots):
+                break
+            canon, label, aliases = slots[idx]
+            canonical_names.add(canon)
+            for a in aliases:
+                alias_map[a] = canon
+                alias_map[f"{a}[1m]"] = canon
+                alias_map[f"{a}-1m"] = canon
+
+            all_mappings.append({
+                "tier": tier_name,
+                "slot_index": idx + 1,
+                "canonical": canon,
+                "label": label,
+                "aliases": aliases,
+                "model_entry": model_entry,
+            })
+
+        # Fallback: any remaining unassigned slots in this family route to primary choice
+        primary_model = selected_models[0]
+        for idx in range(len(selected_models), len(slots)):
+            canon, label, aliases = slots[idx]
+            canonical_names.add(canon)
+            for a in aliases:
+                alias_map[a] = canon
+                alias_map[f"{a}[1m]"] = canon
+                alias_map[f"{a}-1m"] = canon
+            all_mappings.append({
+                "tier": tier_name,
+                "slot_index": idx + 1,
+                "canonical": canon,
+                "label": label,
+                "aliases": aliases,
+                "model_entry": primary_model,
+            })
+
+    return all_mappings, alias_map, canonical_names
+
+def tui_wizard_model_configuration(tiers, current_config, catalog):
+    """Interactive multi-tier wizard with checkboxes, slot ordering, and back/forward navigation."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
 
     import curses
     import textwrap
 
-    display_items = []
-    
-    # 1. OpenRouter options
-    openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
-    if openrouter_opts:
-        display_items.append({"type": "header", "label": "☁  OpenRouter Cloud"})
-        for opt_idx, opt in enumerate(all_options, 1):
-            if opt.get("provider") == "openrouter":
-                display_items.append({
-                    "type": "model",
-                    "num": opt_idx,
-                    "data": opt,
-                    "is_current": (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id)),
-                    "is_recommended": bool(opt.get("is_recommended")),
-                })
+    # Build display items for each tier
+    tier_data = []
+    tier_selections = {}
 
-    # 2. Ollama options
-    ollama_opts = [o for o in all_options if o.get("provider") == "ollama"]
-    if ollama_opts:
-        display_items.append({"type": "header", "label": "⬡  Ollama (Local Inference)"})
-        for opt_idx, opt in enumerate(all_options, 1):
-            if opt.get("provider") == "ollama":
-                display_items.append({
-                    "type": "model",
-                    "num": opt_idx,
-                    "data": opt,
-                    "is_current": (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id)),
-                    "is_recommended": bool(opt.get("is_recommended")),
-                })
+    for t_idx, t in enumerate(tiers):
+        tname = t["tier_name"]
+        all_options = t["options"] + t.get("ollama_options", [])
+        
+        display_items = []
+        # 1. OpenRouter options
+        openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
+        if openrouter_opts:
+            display_items.append({"type": "header", "label": "☁  OpenRouter Cloud"})
+            for opt_idx, opt in enumerate(all_options, 1):
+                if opt.get("provider") == "openrouter":
+                    display_items.append({
+                        "type": "model",
+                        "num": opt_idx,
+                        "data": opt,
+                        "is_recommended": bool(opt.get("is_recommended")),
+                    })
 
-    # 3. Custom options
-    custom_openrouter_num = len(all_options) + 1
-    custom_local_num = len(all_options) + 2
-    display_items.append({"type": "header", "label": "✎  Custom Endpoints"})
-    display_items.append({
-        "type": "custom_openrouter",
-        "num": custom_openrouter_num,
-        "label": "Custom OpenRouter model ID",
-        "is_current": (matched_current_idx == custom_openrouter_num),
-        "is_recommended": False,
-        "data": {
-            "name": "Custom OpenRouter Model",
-            "id": current_model_id if current_model_id else "custom/model-id",
-            "provider": "openrouter",
-            "price_str": "Varies by Model",
-            "ctx_str": "Auto-detected via API",
-            "supports1m": False,
-            "desc": "Specify any custom model ID hosted on OpenRouter (e.g. anthropic/claude-3-opus, google/gemini-2.5-pro, deepseek/deepseek-r1)."
-        }
-    })
-    display_items.append({
-        "type": "custom_local",
-        "num": custom_local_num,
-        "label": "Custom local / OpenAI-compatible endpoint",
-        "is_current": False,
-        "is_recommended": False,
-        "data": {
-            "name": "Custom Local / OpenAI Endpoint",
-            "id": "openai/custom-model",
-            "provider": "local",
-            "price_str": "$0.00 / Local",
-            "ctx_str": "Local Context",
-            "supports1m": False,
-            "desc": "Connect to any OpenAI-compatible local server:\n• Ollama (http://localhost:11434)\n• LM Studio (http://localhost:1234/v1)\n• vLLM, LocalAI, Aphrodite, or custom gateway proxies."
-        }
-    })
+        # 2. Ollama options
+        ollama_opts = [o for o in all_options if o.get("provider") == "ollama"]
+        if ollama_opts:
+            display_items.append({"type": "header", "label": "⬡  Ollama (Local Inference)"})
+            for opt_idx, opt in enumerate(all_options, 1):
+                if opt.get("provider") == "ollama":
+                    display_items.append({
+                        "type": "model",
+                        "num": opt_idx,
+                        "data": opt,
+                        "is_recommended": bool(opt.get("is_recommended")),
+                    })
 
-    selectable_indices = [i for i, it in enumerate(display_items) if it["type"] != "header"]
-    if not selectable_indices:
-        return None
+        # 3. Custom options
+        custom_openrouter_num = len(all_options) + 1
+        custom_local_num = len(all_options) + 2
+        display_items.append({"type": "header", "label": "✎  Custom Endpoints"})
+        display_items.append({
+            "type": "custom_openrouter",
+            "num": custom_openrouter_num,
+            "label": "Custom OpenRouter model ID",
+            "is_recommended": False,
+            "data": {
+                "name": "Custom OpenRouter Model",
+                "id": "custom/model-id",
+                "raw_model_id": "custom/model-id",
+                "provider": "openrouter",
+                "price_str": "Varies by Model",
+                "ctx_str": "Auto-detected via API",
+                "supports1m": False,
+                "desc": "Specify any custom model ID hosted on OpenRouter (e.g. anthropic/claude-3-opus, google/gemini-2.5-pro, deepseek/deepseek-r1)."
+            }
+        })
+        display_items.append({
+            "type": "custom_local",
+            "num": custom_local_num,
+            "label": "Custom local / OpenAI-compatible endpoint",
+            "is_recommended": False,
+            "data": {
+                "name": "Custom Local / OpenAI Endpoint",
+                "id": "openai/custom-model",
+                "raw_model_id": "openai/custom-model",
+                "provider": "local",
+                "price_str": "$0.00 / Local",
+                "ctx_str": "Local Context",
+                "supports1m": False,
+                "desc": "Connect to any OpenAI-compatible local server:\n• Ollama (http://localhost:11434)\n• LM Studio (http://localhost:1234/v1)\n• vLLM, LocalAI, Aphrodite, or custom gateway proxies."
+            }
+        })
 
-    target_num = matched_current_idx if matched_current_idx is not None else recommended_idx
-    selected_sel_idx = 0
-    for idx_in_sel, item_idx in enumerate(selectable_indices):
-        if display_items[item_idx]["num"] == target_num:
-            selected_sel_idx = idx_in_sel
-            break
+        # Detect currently configured model(s) for this tier
+        slots = TIER_FAMILY_SLOTS.get(tname, [])
+        initial_selected = []
+        for canon, label, aliases in slots:
+            curr_target = current_config.get(canon)
+            if curr_target:
+                matched_item = next((it["data"] for it in display_items if it.get("data") and (it["data"]["id"] == curr_target or it["data"].get("raw_model_id") == curr_target)), None)
+                if matched_item and matched_item not in initial_selected:
+                    initial_selected.append(matched_item)
 
-    def curses_app(stdscr):
-        nonlocal selected_sel_idx
+        if not initial_selected:
+            rec_item = next((it["data"] for it in display_items if it.get("is_recommended") and it.get("data")), None)
+            if rec_item:
+                initial_selected.append(rec_item)
+            elif all_options:
+                initial_selected.append(all_options[0])
+
+        tier_selections[tname] = initial_selected
+        tier_data.append({
+            "tier_idx": t_idx,
+            "tier_name": tname,
+            "tier_label": t["tier_label"],
+            "claude_name": t["claude_name"],
+            "display_items": display_items,
+            "selectable_indices": [i for i, it in enumerate(display_items) if it["type"] != "header"],
+            "max_slots": len(slots),
+        })
+
+    total_tiers = len(tiers)
+
+    def curses_wizard(stdscr):
         curses.curs_set(0)
         curses.use_default_colors()
-        
+
         try:
             curses.init_pair(1, curses.COLOR_CYAN, -1)
             curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_CYAN)
@@ -884,17 +980,19 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
         except Exception:
             pass
 
+        active_tier_idx = 0
+        selected_sel_idx = 0
         scroll_top = 0
         info_scroll_top = 0
-        input_num_buf = ""
         show_preview = True
+        input_num_buf = ""
 
         while True:
             stdscr.erase()
             max_y, max_x = stdscr.getmaxyx()
 
-            if max_y < 12 or max_x < 65:
-                msg = f"Terminal size ({max_x}x{max_y}) is compact. Resize window for 2-pane TUI."
+            if max_y < 12 or max_x < 70:
+                msg = f"Terminal size ({max_x}x{max_y}) is compact. Resize window for 2-pane Wizard."
                 try:
                     stdscr.addstr(0, 0, msg[:max_x-1])
                 except Exception:
@@ -905,16 +1003,171 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     return None
                 continue
 
-            header_title = f" [{tier_idx}/{total_tiers}] {tier['tier_label']} "
-            try:
-                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addstr(0, 1, header_title[:max_x - 2])
-                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-            except Exception:
-                pass
+            # Stepper Bar (Line 0)
+            stepper_parts = []
+            for idx, td in enumerate(tier_data):
+                t_short = td["tier_name"].upper()
+                is_curr = (idx == active_tier_idx)
+                is_done = bool(tier_selections.get(td["tier_name"]))
+                
+                if is_curr:
+                    tag = f"▶ [{idx+1}/{total_tiers} {t_short}]"
+                elif is_done:
+                    tag = f"[{idx+1}/{total_tiers} {t_short} ✓]"
+                else:
+                    tag = f"[{idx+1}/{total_tiers} {t_short}]"
+                stepper_parts.append((tag, is_curr, is_done))
+
+            rev_is_curr = (active_tier_idx == total_tiers)
+            stepper_parts.append((f"{'▶ ' if rev_is_curr else ''}[REVIEW & APPLY]", rev_is_curr, False))
+
+            cur_x = 1
+            for tag, is_curr, is_done in stepper_parts:
+                if cur_x >= max_x - 4:
+                    break
+                try:
+                    if is_curr:
+                        stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                        stdscr.addstr(0, cur_x, tag[:max_x - cur_x])
+                        stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                    elif is_done:
+                        stdscr.attron(curses.color_pair(3))
+                        stdscr.addstr(0, cur_x, tag[:max_x - cur_x])
+                        stdscr.attroff(curses.color_pair(3))
+                    else:
+                        stdscr.addstr(0, cur_x, tag[:max_x - cur_x])
+                    cur_x += len(tag) + 1
+                    if cur_x < max_x - 3:
+                        stdscr.addstr(0, cur_x, "➔ ")
+                        cur_x += 2
+                except Exception:
+                    pass
+
+            # ─── REVIEW STEP (active_tier_idx == total_tiers) ────────────────
+            if active_tier_idx == total_tiers:
+                body_h = max_y - 3
+                left_w = min(96, max(74, int(max_x * 0.54)))
+                divider_x = left_w + 1
+                right_x = divider_x + 2
+                right_w = max(20, max_x - right_x - 1)
+
+                try:
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, "── Configured Model Slot Summary (All 5 Tiers) " + ("─" * max(0, left_w - 48)))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                review_lines = []
+                for td in tier_data:
+                    tname = td["tier_name"]
+                    tlabel = td["tier_label"]
+                    sel_list = tier_selections.get(tname, [])
+                    slots = TIER_FAMILY_SLOTS.get(tname, [])
+                    
+                    review_lines.append((f"[{td['tier_idx']+1}] {tlabel}", curses.color_pair(1) | curses.A_BOLD))
+                    for s_idx, model_item in enumerate(sel_list):
+                        canon, s_label, _ = slots[s_idx]
+                        slot_type = "[PRIMARY]" if s_idx == 0 else f"[SLOT {s_idx+1}]"
+                        p_str = model_item.get("price_str", "")
+                        c_str = f"[{model_item.get('ctx_str', '').replace(' Context', '').strip()}]"
+                        m_name = model_item.get("name", model_item.get("id", ""))
+                        review_lines.append((f"    {slot_type:<9} {m_name:<28} {p_str:<12} {c_str:<7} ({s_label})", curses.color_pair(3) if s_idx == 0 else 0))
+                    review_lines.append(("", 0))
+
+                for r_idx in range(body_h):
+                    draw_y = 2 + r_idx
+                    if r_idx < len(review_lines):
+                        txt, attr = review_lines[r_idx]
+                        try:
+                            if attr:
+                                stdscr.attron(attr)
+                            stdscr.addstr(draw_y, 1, txt[:left_w].ljust(left_w))
+                            if attr:
+                                stdscr.attroff(attr)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            stdscr.addstr(draw_y, 1, " " * left_w)
+                        except Exception:
+                            pass
+
+                # Right Pane in Review
+                if divider_x and right_w > 0:
+                    for y in range(1, max_y - 1):
+                        try:
+                            stdscr.attron(curses.color_pair(6))
+                            stdscr.addstr(y, divider_x, "│")
+                            stdscr.attroff(curses.color_pair(6))
+                        except Exception:
+                            pass
+
+                    try:
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(1, right_x, "── Confirmation & Actions " + ("─" * max(0, right_w - 26)))
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+
+                    r_lines = [
+                        "All 5 model tiers are ready to be configured.",
+                        "",
+                        "• LiteLLM Model Router:",
+                        "  Generates strict model routing & fallback slots.",
+                        "",
+                        "• Claude Desktop Dropdown Switching:",
+                        "  Checked slots appear in Claude Desktop dropdown.",
+                        "",
+                        "Actions:",
+                        "• Press [Enter] to confirm and write config.",
+                        "• Press [1-5] to jump directly to edit any tier.",
+                        "• Press [b] / [Left] to go back to Mythos tier.",
+                        "• Press [q] to cancel without saving.",
+                    ]
+                    for r_i, rl in enumerate(r_lines):
+                        try:
+                            stdscr.addstr(3 + r_i, right_x, rl[:right_w].ljust(right_w))
+                        except Exception:
+                            pass
+
+                footer_text = " [Enter / y] Confirm & Apply Changes  •  [1-5] Edit Tier  •  [b / ⬅ Back] Back  •  [q] Cancel "
+                try:
+                    stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                    stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                    stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                stdscr.refresh()
+                k = stdscr.getch()
+                if k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('y'), ord('Y')):
+                    return tier_selections
+                elif k in (ord('q'), ord('Q')):
+                    return None
+                elif k in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
+                    active_tier_idx = total_tiers - 1
+                    selected_sel_idx = 0
+                    scroll_top = 0
+                    info_scroll_top = 0
+                elif ord('1') <= k <= ord('5'):
+                    active_tier_idx = (k - ord('1'))
+                    selected_sel_idx = 0
+                    scroll_top = 0
+                    info_scroll_top = 0
+                continue
+
+            # ─── TIER SELECTION STEP (active_tier_idx in 0..total_tiers-1) ────
+            td = tier_data[active_tier_idx]
+            tname = td["tier_name"]
+            display_items = td["display_items"]
+            selectable_indices = td["selectable_indices"]
+            max_slots = td["max_slots"]
+            current_selected = tier_selections[tname]
+            slots = TIER_FAMILY_SLOTS.get(tname, [])
 
             if show_preview and max_x >= 70:
-                left_w = min(92, max(74, int(max_x * 0.54)))
+                left_w = min(96, max(74, int(max_x * 0.54)))
                 if max_x < 100:
                     left_w = max(46, max_x - 26)
                 divider_x = left_w + 1
@@ -928,11 +1181,25 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
 
             body_h = max_y - 3
 
-            curr_item_idx = selectable_indices[selected_sel_idx]
+            if not selectable_indices:
+                selected_sel_idx = 0
+            else:
+                selected_sel_idx = max(0, min(selected_sel_idx, len(selectable_indices) - 1))
+
+            curr_item_idx = selectable_indices[selected_sel_idx] if selectable_indices else 0
             if curr_item_idx < scroll_top:
                 scroll_top = curr_item_idx
             elif curr_item_idx >= scroll_top + body_h:
                 scroll_top = curr_item_idx - body_h + 1
+
+            # Sub-header for current tier
+            try:
+                subhdr = f" Select models for {td['tier_label']} (Up to {max_slots} slots):"
+                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                stdscr.addstr(1, 1, subhdr[:left_w].ljust(left_w))
+                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+            except Exception:
+                pass
 
             # Render Left Pane
             y_offset = 2
@@ -960,13 +1227,27 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 else:
                     is_active = (item_idx == curr_item_idx)
                     num_str = f"[{item['num']:>2}]"
-                    
+                    d = item["data"]
+
+                    # Checkbox & Slot Number status
+                    is_checked = d in current_selected
+                    if is_checked:
+                        slot_order = current_selected.index(d) + 1
+                        check_str = f"[{slot_order}]"
+                        if slot_order == 1:
+                            slot_badge = "[PRIMARY]"
+                        else:
+                            slot_alias_lbl = slots[slot_order - 1][1] if slot_order <= len(slots) else f"Slot {slot_order}"
+                            slot_badge = f"[SLOT {slot_order}: {slot_alias_lbl}]"
+                    else:
+                        check_str = "[ ]"
+                        slot_badge = ""
+
                     if item["type"] in ("custom_openrouter", "custom_local"):
                         name_str = item["label"]
                         price_str = ""
                         ctx_short = ""
                     else:
-                        d = item["data"]
                         name_str = d["name"]
                         price_str = d.get("price_str", "")
                         raw_ctx = d.get("ctx_str", "").replace(" Context", "").strip()
@@ -975,23 +1256,23 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     badges = []
                     if item.get("is_recommended"):
                         badges.append("(Recommended)")
-                    if item.get("is_current"):
-                        badges.append("[CURRENT]")
-                    elif "$0.00" in price_str or ":free" in item["data"].get("id", ""):
+                    if "$0.00" in price_str or ":free" in d.get("id", ""):
                         badges.append("[FREE]")
+                    if slot_badge:
+                        badges.append(slot_badge)
                     badge_str = " ".join(badges)
 
-                    # Fixed column widths for crisp vertical table alignment
-                    col_name_w = 28
-                    if left_w < 82:
-                        col_name_w = max(16, left_w - 7 - 13 - 8 - len(badge_str) - 2)
+                    # Fixed column widths for crisp alignment
+                    col_name_w = 26
+                    if left_w < 84:
+                        col_name_w = max(14, left_w - 9 - 13 - 8 - len(badge_str) - 2)
 
                     short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
                     price_part = f"{price_str:<13}" if price_str else (" " * 13)
                     ctx_part = f"{ctx_short:<8}" if ctx_short else (" " * 8)
 
                     cursor_char = "▶" if is_active else " "
-                    row_content = f" {cursor_char} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
+                    row_content = f" {cursor_char} {check_str} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
                     padded_row = row_content.ljust(left_w)[:left_w]
 
                     try:
@@ -999,12 +1280,16 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                             stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
                             stdscr.addstr(draw_y, 0, padded_row)
                             stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                        elif is_checked:
+                            stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
+                            stdscr.addstr(draw_y, 0, padded_row)
+                            stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
                         else:
                             stdscr.addstr(draw_y, 0, padded_row)
                     except Exception:
                         pass
 
-            # Center Vertical Divider & Right Pane (if preview active)
+            # Center Vertical Divider & Right Pane
             if show_preview and divider_x and right_x and right_w > 0:
                 for y in range(1, max_y - 1):
                     try:
@@ -1019,20 +1304,17 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 d = cur_selected_item["data"]
 
                 def add_field(label, val, attr=0):
-                    if not val:
-                        return
+                    if not val: return
                     max_w = max(6, right_w - len(label))
-                    if len(val) <= max_w:
-                        detail_lines.append((label, val, attr))
+                    if len(val) <= max_w: detail_lines.append((label, val, attr))
                     else:
                         wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
                         detail_lines.append((label, "", curses.A_BOLD))
-                        for w_part in wrapped:
-                            detail_lines.append(("", "  " + w_part, attr))
+                        for w_part in wrapped: detail_lines.append(("", "  " + w_part, attr))
 
                 add_field("Display Name: ", d["name"], curses.A_BOLD)
                 add_field("Model ID:     ", d["id"], curses.color_pair(1))
-                
+
                 if d.get("provider") == "openrouter" and not d["id"].startswith("custom/"):
                     add_field("OpenRouter:   ", f"https://openrouter.ai/{d['id']}", curses.color_pair(1))
                 elif d.get("provider") == "ollama":
@@ -1042,26 +1324,30 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 add_field("Provider:     ", prov_name, 0)
                 add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)
                 add_field("Context:      ", d.get("ctx_str", "N/A"), curses.color_pair(5))
-                
+
                 s1m_str = "[1M Context Enabled]" if d.get("supports1m") else "[Standard Context Window]"
                 s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
                 add_field("1M Support:   ", s1m_str, s1m_color)
 
-                status_tags = []
-                if cur_selected_item.get("is_recommended"):
-                    status_tags.append("(Recommended Choice)")
-                if cur_selected_item.get("is_current"):
-                    status_tags.append("[CURRENTLY CONFIGURED]")
-                if ":free" in d.get("id", "") or "$0.00" in d.get("price_str", ""):
-                    status_tags.append("[$0.00 Free Inference]")
-                
-                if status_tags:
-                    add_field("Status:       ", " | ".join(status_tags), curses.color_pair(4) | curses.A_BOLD)
+                # Slot Assignment Info
+                if d in current_selected:
+                    slot_order = current_selected.index(d) + 1
+                    canon, s_lbl, _ = slots[slot_order - 1] if slot_order <= len(slots) else ("", "", [])
+                    slot_str = f"[PRIMARY] ➔ {canon} ({s_lbl})" if slot_order == 1 else f"[SLOT {slot_order}] ➔ {canon} ({s_lbl})"
+                    add_field("Slot Status:  ", slot_str, curses.color_pair(3) | curses.A_BOLD)
+                else:
+                    add_field("Slot Status:  ", "Not Checked (Press Space to assign slot)", 0)
+
+                detail_lines.append(("", "", 0))
+                detail_lines.append(("── Selection Order Note ──────────────────────", "", curses.color_pair(4)))
+                order_note = f"1st model checked = [PRIMARY] (Default dropdown in Claude). Subsequent checks fill version variant slots (up to {max_slots} models). Press 'a' to uncheck all and reorder."
+                for wl in textwrap.wrap(order_note, width=right_w):
+                    detail_lines.append(("", wl, curses.color_pair(4)))
 
                 detail_lines.append(("", "", 0))
                 detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
 
-                desc_text = d.get("desc") or f"Curated model for {tier['tier_name'].upper()} tier tasks."
+                desc_text = d.get("desc") or f"Curated model for {td['tier_name'].upper()} tier tasks."
                 for p in desc_text.split("\n"):
                     if p.strip():
                         wrapped = textwrap.wrap(p, width=right_w)
@@ -1072,7 +1358,6 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
 
                 card_y = 2
                 card_rows = max_y - 3
-
                 max_info_scroll = max(0, len(detail_lines) - card_rows)
                 info_scroll_top = min(info_scroll_top, max_info_scroll)
 
@@ -1100,32 +1385,23 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                             label, val, attr = "", "", 0
                             line_text = " " * right_w
 
-                        # Draw base line wiping any old characters completely
                         stdscr.addstr(line_y, right_x, line_text[:right_w])
-
-                        # Highlight formatted attributes
                         if detail_idx < len(detail_lines):
-                            if label and not val and attr:
+                            label, val, attr = detail_lines[detail_idx]
+                            if attr:
                                 stdscr.attron(attr)
                                 stdscr.addstr(line_y, right_x, label[:right_w])
+                                if len(label) < right_w:
+                                    stdscr.addstr(line_y, right_x + len(label), val[:right_w - len(label)])
                                 stdscr.attroff(attr)
-                            else:
-                                if label:
-                                    stdscr.attron(curses.A_BOLD)
-                                    stdscr.addstr(line_y, right_x, label[:right_w])
-                                    stdscr.attroff(curses.A_BOLD)
-                                if val and attr:
-                                    stdscr.attron(attr)
-                                    stdscr.addstr(line_y, right_x + len(label), val[:max(0, right_w - len(label))])
-                                    stdscr.attroff(attr)
                     except Exception:
                         pass
             else:
                 max_info_scroll = 0
 
-            # Footer navigation bar
-            preview_toggle_label = "Hide info" if show_preview else "Show info"
-            footer_text = f" [↑/↓/j/k] Navigate  •  [d/u] Scroll  •  [Tab/ESC] {preview_toggle_label}  •  [1-N / Enter] Select  •  [q] Abort "
+            # Footer Navigation
+            next_label = "Review ➔" if active_tier_idx == total_tiers - 1 else "Next Tier ➔"
+            footer_text = f" [Space] Toggle  •  [a] Uncheck All  •  [Enter / n] {next_label}  •  [b / ⬅ Back] Back  •  [Tab/ESC] Info  •  [q] Abort "
             if input_num_buf:
                 footer_text += f" • Jump: {input_num_buf}_"
             try:
@@ -1136,17 +1412,14 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 pass
 
             stdscr.refresh()
-
             key = stdscr.getch()
 
             if key in (curses.KEY_UP, ord('k'), ord('K')):
                 selected_sel_idx = (selected_sel_idx - 1) % len(selectable_indices)
                 info_scroll_top = 0
-                input_num_buf = ""
             elif key in (curses.KEY_DOWN, ord('j'), ord('J')):
                 selected_sel_idx = (selected_sel_idx + 1) % len(selectable_indices)
                 info_scroll_top = 0
-                input_num_buf = ""
             elif key in (ord('d'), ord('D'), curses.KEY_NPAGE):
                 info_scroll_top = min(max_info_scroll, info_scroll_top + 4)
             elif key in (ord('u'), ord('U'), curses.KEY_PPAGE):
@@ -1158,24 +1431,51 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     input_num_buf = ""
                 else:
                     show_preview = not show_preview
-            elif key in (curses.KEY_HOME, ord('g')):
-                selected_sel_idx = 0
+            elif key in (ord('a'), ord('A')):
+                tier_selections[tname].clear()
                 info_scroll_top = 0
                 input_num_buf = ""
-            elif key in (curses.KEY_END, ord('G')):
-                selected_sel_idx = len(selectable_indices) - 1
-                info_scroll_top = 0
+            elif key == ord(' '):
+                cur_d = display_items[curr_item_idx]["data"]
+                if cur_d in current_selected:
+                    current_selected.remove(cur_d)
+                else:
+                    if len(current_selected) < max_slots:
+                        current_selected.append(cur_d)
+                    else:
+                        current_selected[-1] = cur_d
                 input_num_buf = ""
-            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord(' '), curses.KEY_RIGHT):
+            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
                 if input_num_buf:
                     try:
                         target_val = int(input_num_buf)
                         for item_idx in selectable_indices:
                             if display_items[item_idx]["num"] == target_val:
-                                return display_items[item_idx]["num"]
+                                tgt_d = display_items[item_idx]["data"]
+                                if tgt_d in current_selected:
+                                    current_selected.remove(tgt_d)
+                                else:
+                                    if len(current_selected) < max_slots:
+                                        current_selected.append(tgt_d)
                     except ValueError:
                         pass
-                return display_items[curr_item_idx]["num"]
+                    input_num_buf = ""
+                else:
+                    if not current_selected and selectable_indices:
+                        current_selected.append(display_items[curr_item_idx]["data"])
+                    active_tier_idx += 1
+                    selected_sel_idx = 0
+                    scroll_top = 0
+                    info_scroll_top = 0
+            elif key in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
+                if input_num_buf:
+                    input_num_buf = input_num_buf[:-1]
+                else:
+                    if active_tier_idx > 0:
+                        active_tier_idx -= 1
+                        selected_sel_idx = 0
+                        scroll_top = 0
+                        info_scroll_top = 0
             elif key in (ord('q'), ord('Q')):
                 return None
             elif ord('0') <= key <= ord('9'):
@@ -1188,13 +1488,11 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                         info_scroll_top = 0
                 except ValueError:
                     input_num_buf = ""
-            elif key == curses.KEY_BACKSPACE or key in (127, 8):
-                input_num_buf = input_num_buf[:-1]
             elif key == curses.KEY_RESIZE:
                 continue
 
     try:
-        return curses.wrapper(curses_app)
+        return curses.wrapper(curses_wizard)
     except Exception:
         return None
 
@@ -1211,7 +1509,6 @@ def run_model_configuration():
 
     # Helper: build an Ollama option entry if the model is installed
     def ollama_opt(model_id, label, ctx_str="Local Context", supports1m=False, is_recommended=False):
-        # Match against installed names (exact or prefix, e.g. "qwen3-coder:32b" or "qwen3-coder")
         matched = next((n for n in ollama_installed if n == model_id or n.startswith(model_id + ":")), None)
         if not matched:
             return None
@@ -1258,305 +1555,159 @@ def run_model_configuration():
                 get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
             ],
             "ollama_options": ollama_opts([
-                ("llama3.3", "llama3.3:70b", "Local Context", True, True),
-                ("qwen2.5", "qwen2.5:72b", "Local Context", True),
-                ("deepseek-r1", "deepseek-r1:70b", "Local Context", True),
-                ("mixtral:8x22b", "mixtral:8x22b", "Local Context", False),
-                ("nemotron", "nemotron:70b", "Local Context", True),
-                ("command-r-plus", "command-r-plus:104b", "Local Context", True),
-            ]),
+                ("llama3.3:70b", "Llama 3.3 70B (Local)", "128k Context", False),
+                ("qwen2.5-coder:32b", "Qwen 2.5 Coder 32B (Local)", "128k Context", False),
+                ("deepseek-r1:70b", "DeepSeek R1 70B (Local)", "128k Context", False),
+                ("mixtral:8x22b", "Mixtral 8x22B (Local)", "64k Context", False),
+            ])
         },
         {
             "tier_name": "sonnet",
-            "tier_label": "SONNET TIER (Fast Agentic Workhorse & Coding)",
+            "tier_label": "SONNET TIER (Agentic Coding, Tool Use & Everyday Workhorse)",
             "claude_name": "claude-sonnet-4-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True, is_recommended=True),
                 get_model_entry(catalog, "cohere/north-mini-code:free", "North Mini Code (Free)", "$0.00/$0.00", "256k Context", False),
-                get_model_entry(catalog, "poolside/laguna-s-2.1:free", "Poolside Laguna S 2.1 (Free)", "$0.00/$0.00", "262k Context", False),
-                get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
+                get_model_entry(catalog, "poolside/laguna-s-2.1:free", "Laguna S 2.1 (Free)", "$0.00/$0.00", "262k Context", False),
                 get_model_entry(catalog, "google/gemma-4-31b-it:free", "Gemma 4 31B (Free)", "$0.00/$0.00", "262k Context", False),
                 get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True),
                 get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
                 get_model_entry(catalog, "qwen/qwen3-coder-next", "Qwen3 Coder Next", "$0.12/$0.80", "262k Context", False),
-                get_model_entry(catalog, "mistralai/ministral-8b-2512", "Ministral 8B", "$0.15/$0.15", "262k Context", False),
                 get_model_entry(catalog, "qwen/qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "$0.07/$0.28", "262k Context", False),
                 get_model_entry(catalog, "mistralai/codestral-2508", "Codestral 2508", "$0.30/$0.90", "256k Context", False),
-                get_model_entry(catalog, "qwen/qwen3-coder-flash", "Qwen3 Coder Flash", "$0.20/$0.97", "1M Context", True),
-                get_model_entry(catalog, "deepseek/deepseek-chat", "DeepSeek V3", "$0.26/$1.03", "163k Context", False),
+                get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "anthropic/claude-sonnet-4", "Claude Sonnet 4", "$3.00/$15.00", "1M Context", True),
             ],
             "ollama_options": ollama_opts([
-                ("qwen2.5-coder:32b", "qwen2.5-coder:32b", "Local Context", False, True),
-                ("qwen2.5-coder:14b", "qwen2.5-coder:14b", "Local Context", False),
-                ("deepseek-coder-v2", "deepseek-coder-v2:16b", "Local Context", False),
-                ("codellama:34b", "codellama:34b", "Local Context", False),
-                ("mixtral:8x7b", "mixtral:8x7b", "Local Context", False),
-                ("mistral-nemo", "mistral-nemo:12b", "Local Context", False),
-                ("llama3.1:8b", "llama3.1:8b", "Local Context", False),
-                ("gemma2:9b", "gemma2:9b", "Local Context", False),
-                ("phi4", "phi4:14b", "Local Context", False),
-            ]),
+                ("qwen2.5-coder:32b", "Qwen 2.5 Coder 32B (Local)", "128k Context", False),
+                ("codellama:34b", "CodeLlama 34B (Local)", "100k Context", False),
+                ("llama3.1:8b", "Llama 3.1 8B (Local)", "128k Context", False),
+            ])
         },
         {
             "tier_name": "haiku",
-            "tier_label": "HAIKU TIER (Maximum Speed & Low Cost)",
+            "tier_label": "HAIKU TIER (High Throughput, Low Latency & Background Tasks)",
             "claude_name": "claude-3-haiku-20240307",
             "options": [
                 get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True, is_recommended=True),
                 get_model_entry(catalog, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning (Free)", "$0.00/$0.00", "1M Context", True),
-                get_model_entry(catalog, "thinkingmachines/inkling-small:free", "Inkling Small (Free)", "$0.00/$0.00", "262k Context", False),
                 get_model_entry(catalog, "nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano 30B (Free)", "$0.00/$0.00", "256k Context", False),
-                get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
-                get_model_entry(catalog, "mistralai/mistral-nemo", "Mistral NeMo", "$0.02/$0.03", "131k Context", False),
+                get_model_entry(catalog, "thinkingmachines/inkling-small:free", "Inkling Small (Free)", "$0.00/$0.00", "262k Context", False),
+                get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True),
                 get_model_entry(catalog, "inclusionai/ling-3.0-flash", "Ling 3.0 Flash", "$0.02/$0.06", "262k Context", False),
                 get_model_entry(catalog, "openai/gpt-oss-120b", "GPT-OSS 120B", "$0.03/$0.17", "131k Context", False),
-                get_model_entry(catalog, "amazon/nova-micro-v1", "Amazon Nova Micro", "$0.04/$0.14", "128k Context", False),
-                get_model_entry(catalog, "meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B", "$0.05/$0.08", "131k Context", False),
-                get_model_entry(catalog, "qwen/qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "$0.07/$0.28", "262k Context", False),
-                get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True),
-                get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
                 get_model_entry(catalog, "mistralai/ministral-8b-2512", "Ministral 8B", "$0.15/$0.15", "262k Context", False),
-                get_model_entry(catalog, "openai/gpt-5.6-luna", "GPT-5.6 Luna", "$0.20/$1.20", "1M Context", True),
+                get_model_entry(catalog, "mistralai/mistral-nemo", "Mistral Nemo 12B", "$0.02/$0.03", "128k Context", False),
+                get_model_entry(catalog, "amazon/nova-micro-v1", "Amazon Nova Micro", "$0.04/$0.14", "128k Context", False),
+                get_model_entry(catalog, "meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B Instruct", "$0.02/$0.05", "131k Context", False),
             ],
             "ollama_options": ollama_opts([
-                ("qwen2.5-coder:7b", "qwen2.5-coder:7b", "Local Context", False, True),
-                ("deepseek-coder:6.7b", "deepseek-coder:6.7b", "Local Context", False),
-                ("phi3:mini", "phi3:mini", "Local Context", False),
-                ("phi3.5:mini", "phi3.5:mini", "Local Context", False),
-                ("gemma2:2b", "gemma2:2b", "Local Context", False),
-                ("llama3.2:3b", "llama3.2:3b", "Local Context", False),
-                ("qwen2.5:7b", "qwen2.5:7b", "Local Context", False),
-                ("mistral:7b", "mistral:7b", "Local Context", False),
-            ]),
+                ("qwen2.5-coder:7b", "Qwen 2.5 Coder 7B (Local)", "128k Context", False),
+                ("llama3.2:3b", "Llama 3.2 3B (Local)", "128k Context", False),
+                ("phi4:14b", "Phi 4 14B (Local)", "128k Context", False),
+                ("mistral:7b", "Mistral 7B (Local)", "32k Context", False),
+            ])
         },
         {
             "tier_name": "fable",
-            "tier_label": "FABLE TIER (Ultra-Heavyweight Multi-Step Agent)",
+            "tier_label": "FABLE TIER (Long-Horizon Agent Loops & Complex Workflows)",
             "claude_name": "claude-fable-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True, is_recommended=True),
                 get_model_entry(catalog, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B (Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "qwen/qwen3.7-plus", "Qwen 3.7 Plus", "$0.32/$1.28", "1M Context", True),
-                get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2", "$0.97/$3.04", "1M Context", True),
-                get_model_entry(catalog, "moonshotai/kimi-k2.5", "Kimi K2.5", "$0.45/$2.25", "262k Context", False),
                 get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
+                get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
             ],
             "ollama_options": ollama_opts([
-                ("qwen2.5-coder:32b", "qwen2.5-coder:32b", "Local Context", False, True),
-                ("llama3.3", "llama3.3:70b", "Local Context", True),
-                ("deepseek-r1:32b", "deepseek-r1:32b", "Local Context", False),
-                ("codellama:34b", "codellama:34b", "Local Context", False),
-            ]),
+                ("qwen2.5-coder:32b", "Qwen 2.5 Coder 32B (Local)", "128k Context", False),
+                ("llama3.3:70b", "Llama 3.3 70B (Local)", "128k Context", False),
+            ])
         },
         {
             "tier_name": "mythos",
-            "tier_label": "MYTHOS TIER (Frontier & Experimental Heavyweight)",
+            "tier_label": "MYTHOS TIER (Frontier Intelligence & Uncompromising Quality)",
             "claude_name": "claude-mythos-1",
             "options": [
-                get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro (Max)", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "anthropic/claude-opus-5", "Claude Opus 5", "$5.00/$25.00", "1M Context", True, is_recommended=True),
                 get_model_entry(catalog, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B (Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
-                get_model_entry(catalog, "anthropic/claude-opus-5", "Claude Opus 5", "$5.00/$25.00", "1M Context", True),
-                get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2 (Reasoning)", "$0.97/$3.04", "1M Context", True),
-                get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3 Ultra", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True),
+                get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True),
+                get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
+                get_model_entry(catalog, "anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6", "$3.00/$15.00", "1M Context", True),
             ],
             "ollama_options": ollama_opts([
-                ("deepseek-r1:671b", "deepseek-r1:671b", "Local Context", True, True),
-                ("llama3.1:405b", "llama3.1:405b", "Local Context", True),
-                ("nemotron:340b", "nemotron:340b", "Local Context", True),
-            ]),
-        },
+                ("deepseek-r1:70b", "DeepSeek R1 70B (Local)", "128k Context", False),
+                ("llama3.3:70b", "Llama 3.3 70B (Local)", "128k Context", False),
+            ])
+        }
     ]
 
+    tier_selections = tui_wizard_model_configuration(tiers, current_config, catalog)
 
+    if not tier_selections:
+        # Fallback CLI Multi-Select Prompt
+        print("\n\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
+        print("\033[1;36m  CLAUDE DESKTOP MODEL CONFIGURATION (CLI Multi-Select Fallback)              \033[0m", file=sys.stderr)
+        print("\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
 
+        tier_selections = {}
+        for t in tiers:
+            tname = t["tier_name"]
+            all_opts = t["options"] + t.get("ollama_options", [])
+            print(f"\n\033[1;36m--- {t['tier_label']} ---\033[0m", file=sys.stderr)
+            for idx, opt in enumerate(all_opts, 1):
+                p_str = opt.get("price_str", "")
+                c_str = f"[{opt.get('ctx_str', '')}]"
+                rec_str = " \033[1;32m(Recommended)\033[0m" if opt.get("is_recommended") else ""
+                print(f"  {idx}) {opt['name']:<28} {p_str:<12} {c_str:<16}{rec_str}", file=sys.stderr)
 
+            user_choice = safe_input(f"Enter model number(s) comma-separated e.g. 1,2 (default=1): ", "1")
+            chosen_indices = []
+            for part in user_choice.split(","):
+                try:
+                    c_val = int(part.strip())
+                    if 1 <= c_val <= len(all_opts):
+                        chosen_indices.append(all_opts[c_val - 1])
+                except ValueError:
+                    pass
+            tier_selections[tname] = chosen_indices or [all_opts[0]]
 
-    header(f"Configure Inference Models for Claude Desktop (Curated: {MODELS_LAST_REVISITED})")
-    print(f"\033[1;34m[INFO]\033[0m Curated model list last revisited: \033[1;36m{MODELS_LAST_REVISITED}\033[0m", file=sys.stderr)
-    print("Select your target model for each Anthropic family tier.", file=sys.stderr)
-    print("Supports OpenRouter cloud models and local engines (Ollama, LM Studio, vLLM).\n", file=sys.stderr)
-
-    selections = []
-
-    for idx, t in enumerate(tiers, 1):
-        current_model_id = current_config.get(t["claude_name"])
-        matched_current_idx = None
-        recommended_idx = 1
-
-        # OpenRouter curated options + matching installed Ollama models
-        all_options = list(t["options"]) + list(t.get("ollama_options", []))
-
-        # Check matched indices
-        for opt_idx, opt in enumerate(all_options, 1):
-            if current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id):
-                matched_current_idx = opt_idx
-            if opt.get("is_recommended"):
-                recommended_idx = opt_idx
-
-        custom_openrouter_num = len(all_options) + 1
-        custom_local_num = len(all_options) + 2
-
-        # 1. Attempt interactive 2-pane TUI selector
-        tui_choice = tui_select_model(t, idx, len(tiers), all_options, matched_current_idx, recommended_idx, current_model_id)
-
-        if tui_choice is not None:
-            choice_num = tui_choice
-            print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
-            if choice_num <= len(all_options):
-                chosen_preview = all_options[choice_num - 1]
-                print(f"  \033[1;32m✓ Selected:\033[0m {chosen_preview['name']} ({chosen_preview['price_str']}) [{chosen_preview['ctx_str']}]\n", file=sys.stderr)
-        else:
-            # 2. Fallback to clean linear CLI menu if not in an interactive curses TTY
-            print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
-
-            # Print OpenRouter cloud section
-            openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
-            if openrouter_opts:
-                print(f"  \033[1;34m☁  OpenRouter\033[0m", file=sys.stderr)
-            for opt_idx, opt in enumerate(all_options, 1):
-                if opt.get("provider") != "openrouter":
-                    continue
-                is_current = (opt_idx == matched_current_idx)
-                tags = []
-                if opt.get("is_recommended"):
-                    tags.append("\033[1;32m(Recommended)\033[0m")
-                if is_current:
-                    tags.append("\033[1;33m[CURRENT]\033[0m")
-                tag_str = f"  {' '.join(tags)}" if tags else ""
-                print(f"  {opt_idx}) {opt['name']:<26} {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
-
-            # Print Ollama curated section (only installed models)
-            ollama_opts_for_tier = [o for o in all_options if o.get("provider") == "ollama"]
-            if ollama_opts_for_tier:
-                print(f"  \033[1;36m⬡  Ollama (Local)\033[0m", file=sys.stderr)
-            for opt_idx, opt in enumerate(all_options, 1):
-                if opt.get("provider") != "ollama":
-                    continue
-                is_current = (opt_idx == matched_current_idx)
-                tags = []
-                if opt.get("is_recommended"):
-                    tags.append("\033[1;32m(Recommended)\033[0m")
-                if is_current:
-                    tags.append("\033[1;33m[CURRENT]\033[0m")
-                tag_str = f"  {' '.join(tags)}" if tags else ""
-                print(f"  {opt_idx}) {opt['raw_model_id']:<26} $0.00 / Local   [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
-
-            custom_tag = ""
-            if matched_current_idx is None and current_model_id:
-                custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
-                matched_current_idx = custom_openrouter_num
-
-            print(f"  \033[1;33m✎  Custom\033[0m", file=sys.stderr)
-            print(f"  {custom_openrouter_num}) Custom OpenRouter model ID{custom_tag}", file=sys.stderr)
-            print(f"  {custom_local_num}) Custom local / OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
-
-            if matched_current_idx is not None:
-                default_choice = str(matched_current_idx)
-                if matched_current_idx == custom_openrouter_num:
-                    default_hint = f"default={default_choice} (Current: {current_model_id})"
-                else:
-                    default_hint = f"default={default_choice} (Current)"
-            else:
-                default_choice = str(recommended_idx)
-                default_hint = f"default={default_choice} (Recommended)"
-
-            user_choice = safe_input(f"Select {t['tier_name'].upper()} model [1-{custom_local_num}, {default_hint}]: ", default_choice)
-
-            try:
-                choice_num = int(user_choice)
-            except ValueError:
-                choice_num = int(default_choice)
-
-
-        if 1 <= choice_num <= len(all_options):
-            chosen = all_options[choice_num - 1]
-            provider = chosen.get("provider", "openrouter")
-            model_id = chosen["raw_model_id"]
-            api_base = chosen.get("api_base")
-            label = f"{chosen['name']} ({chosen['price_str']})"
-            supports1m = chosen["supports1m"]
-        elif choice_num == custom_openrouter_num:
-            default_custom = current_model_id if current_model_id else t["options"][0]["id"]
-            custom_id = safe_input(f"Enter OpenRouter model ID [default={default_custom}]: ", default_custom)
-            item = catalog.get(custom_id)
-            if item:
-                print(f"\033[1;32m[API Match]\033[0m Found {item['name']}: {item['price_str']} [{item['ctx_str']}]", file=sys.stderr)
-                model_id = custom_id
-                label = f"{item['name']} ({item['price_str']})"
-                supports1m = item["supports1m"]
-            else:
-                custom_label = safe_input(f"Enter display label with price (e.g. {custom_id}): ", custom_id)
-                custom_1m = safe_input("Does it support 1M context? (y/N): ", "n").lower() == "y"
-                model_id = custom_id
-                label = custom_label
-                supports1m = custom_1m
-            provider = "openrouter"
-            api_base = None
-        else:
-            # Custom local / OpenAI-compatible endpoint
-            print("\033[1;36m--- Custom Local / Remote Endpoint Configuration ---\033[0m", file=sys.stderr)
-            endpoint_type = safe_input("Select engine type: [1] Ollama, [2] LM Studio / vLLM / OpenAI-compatible (default=1): ", "1")
-            if endpoint_type == "2":
-                provider = "openai"
-                default_base = "http://localhost:1234/v1"
-            else:
-                provider = "ollama"
-                default_base = "http://localhost:11434"
-
-            api_base = safe_input(f"Enter API Base URL [default={default_base}]: ", default_base)
-            model_id = safe_input(f"Enter Model Name (e.g. qwen2.5-coder:32b): ", "local-model")
-            label = safe_input(f"Enter display label in Claude [default={model_id} (Local / $0.00)]: ", f"{model_id} (Local / $0.00)")
-            supports1m = safe_input("Does it support 1M context? (y/N): ", "n").lower() == "y"
-
-        selections.append({
-            "tier": t["tier_name"],
-            "claude_name": t["claude_name"],
-            "provider": provider,
-            "model_id": model_id,
-            "api_base": api_base,
-            "label": label,
-            "supports1m": supports1m
-        })
-        print("", file=sys.stderr)
+    # Generate all slot routes & alias mapping
+    slot_mappings, alias_map, canonical_names = build_all_slot_mappings(tier_selections)
 
     # 1. Write Strict Guardrail & LiteLLM config.yaml
     os.makedirs(APP_DIR, exist_ok=True)
-    canonical_names = {s["claude_name"] for s in selections}
 
-    # Build the full allowed set: canonical names + every alias that maps to a configured tier (+ [1m] context suffixes)
-    raw_aliases = {alias for alias, canon in TIER_ALIASES.items() if canon in canonical_names} | canonical_names
-    allowed_models = sorted(raw_aliases | {f"{a}[1m]" for a in raw_aliases} | {f"{a}-1m" for a in raw_aliases})
+    allowed_models = sorted(set(alias_map.keys()) | canonical_names)
 
     guardrail_py_path = os.path.join(APP_DIR, "guardrail.py")
     guardrail_code = f"""# Strict Model Guardrail - auto-generated by claude-threepio
-# Allows all known Claude model aliases that map to a configured tier.
+# Allows all configured Claude model aliases and routes them to their assigned slot.
 import re
 from litellm.integrations.custom_logger import CustomLogger
 from fastapi import HTTPException
 
-ALLOWED_MODELS = set({json.dumps(allowed_models)})
-
-# Alias map: any incoming model name is normalised to its canonical tier name
-ALIAS_MAP = {{k: v for k, v in {json.dumps(dict(TIER_ALIASES))}.items() if v in {json.dumps(sorted(canonical_names))}}}
+ALLOWED_MODELS = set({json.dumps(list(allowed_models))})
+ALIAS_MAP = {json.dumps(alias_map)}
 
 class StrictModelGuardrail(CustomLogger):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type, **kwargs):
         requested_model = data.get("model")
         if requested_model:
-            # Strip context window suffixes like [1m], [200k], etc. that Claude Desktop appends
             base_model = re.sub(r'\\[.*?\\]$', '', requested_model).strip()
-            canonical = ALIAS_MAP.get(base_model, ALIAS_MAP.get(requested_model, base_model))
+            canonical = ALIAS_MAP.get(requested_model, ALIAS_MAP.get(base_model, base_model))
             if canonical not in ALLOWED_MODELS and base_model not in ALLOWED_MODELS and requested_model not in ALLOWED_MODELS:
                 raise HTTPException(
                     status_code=403,
                     detail=f"[Strict Guardrail] Model '{{requested_model}}' is not permitted. "
-                           f"Configured tiers: {{sorted(set(ALIAS_MAP.values()))}}",
+                           f"Permitted canonical slots: {{sorted(set(ALIAS_MAP.values()))}}",
                 )
-            # Rewrite to canonical name so LiteLLM routes correctly
+            # Rewrite to target slot name for LiteLLM routing
             data["model"] = canonical
         return data
 
@@ -1575,44 +1726,52 @@ strict_guardrail = StrictModelGuardrail()
             pass
 
     yaml_lines = ["model_list:"]
-    for s in selections:
-        # Collect every alias that maps to this tier's canonical name
-        aliases = sorted({alias for alias, canon in TIER_ALIASES.items() if canon == s["claude_name"]})
-        if not aliases:
-            aliases = [s["claude_name"]]
 
-        def litellm_params(lines, s):
-            if s["provider"] == "openrouter":
-                lines.append(f"      model: openrouter/{s['model_id']}")
-                lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY")
-            elif s["provider"] == "ollama":
-                raw_id = s['model_id'][len("ollama/"):] if s['model_id'].startswith("ollama/") else s['model_id']
-                lines.append(f"      model: ollama/{raw_id}")
-                lines.append(f"      api_base: {s['api_base'] or 'http://localhost:11434'}")
-            elif s["provider"] in ("openai", "lmstudio", "vllm"):
-                raw_id = s['model_id'][len("openai/"):] if s['model_id'].startswith("openai/") else s['model_id']
-                lines.append(f"      model: openai/{raw_id}")
-                lines.append(f"      api_base: {s['api_base'] or 'http://localhost:1234/v1'}")
-                lines.append(f"      api_key: dummy-key")
-            else:
-                lines.append(f"      model: {s['model_id']}")
-                if s.get("api_base"):
-                    lines.append(f"      api_base: {s['api_base']}")
-                lines.append(f"      api_key: dummy-key")
+    def write_litellm_params(lines, d):
+        prov = d.get("provider", "openrouter")
+        mid = d.get("raw_model_id") or d.get("id")
+        if prov == "openrouter":
+            clean_id = mid[len("openrouter/"):] if mid.startswith("openrouter/") else mid
+            lines.append(f"      model: openrouter/{clean_id}")
+            lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY")
+        elif prov == "ollama":
+            clean_id = mid[len("ollama/"):] if mid.startswith("ollama/") else mid
+            lines.append(f"      model: ollama/{clean_id}")
+            lines.append(f"      api_base: {d.get('api_base') or 'http://localhost:11434'}")
+        elif prov in ("openai", "lmstudio", "vllm", "local"):
+            clean_id = mid[len("openai/"):] if mid.startswith("openai/") else mid
+            lines.append(f"      model: openai/{clean_id}")
+            lines.append(f"      api_base: {d.get('api_base') or 'http://localhost:1234/v1'}")
+            lines.append(f"      api_key: dummy-key")
+        else:
+            lines.append(f"      model: {mid}")
+            if d.get("api_base"):
+                lines.append(f"      api_base: {d['api_base']}")
+            lines.append(f"      api_key: dummy-key")
 
+    for slot_item in slot_mappings:
+        tname = slot_item["tier"]
+        canon = slot_item["canonical"]
+        slbl = slot_item["label"]
+        d = slot_item["model_entry"]
+        mname = d.get("name", d.get("id", ""))
+        pstr = d.get("price_str", "")
 
-        all_tier_aliases = set(aliases)
-        for a in aliases:
-            all_tier_aliases.add(f"{a}[1m]")
-            all_tier_aliases.add(f"{a}-1m")
-
-        yaml_lines.append(f"  # ── {s['tier'].capitalize()} tier → {s['label']}")
-        for alias in sorted(all_tier_aliases):
+        yaml_lines.append(f"  # ── [{tname.upper()}] Slot {slot_item['slot_index']}: {canon} ({slbl}) ➔ {mname} ({pstr})")
+        for alias in sorted(slot_item["aliases"]):
             yaml_lines.append(f"  - model_name: {alias}")
             yaml_lines.append(f"    litellm_params:")
-            litellm_params(yaml_lines, s)
+            write_litellm_params(yaml_lines, d)
             yaml_lines.append("")
-
+            # Also register [1m] and -1m variants
+            yaml_lines.append(f"  - model_name: {alias}[1m]")
+            yaml_lines.append(f"    litellm_params:")
+            write_litellm_params(yaml_lines, d)
+            yaml_lines.append("")
+            yaml_lines.append(f"  - model_name: {alias}-1m")
+            yaml_lines.append(f"    litellm_params:")
+            write_litellm_params(yaml_lines, d)
+            yaml_lines.append("")
 
     yaml_lines.append("litellm_settings:")
     yaml_lines.append("  drop_params: true")
