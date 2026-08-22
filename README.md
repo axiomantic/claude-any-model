@@ -86,23 +86,20 @@ Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a fr
 
 ---
 
-## Switching Between Gateway Mode and Regular Claude
+## Switching Back to Regular Claude
 
-You can toggle between **Gateway Mode** (3P — OpenRouter proxy) and **Regular Claude** (1P — official Anthropic account) with a single command:
+When your weekly Claude credits reset, switch back to your subscription:
 
 ```bash
-# Toggle between Gateway (3P) and Regular (1P) Claude
-./claude-any-model switch
-
-# Or explicitly switch to a specific mode:
-./claude-any-model switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team (1P)
-./claude-any-model switch gateway    # Activates OpenRouter proxy mode (3P)
+./claude-any-model switch regular
 ```
 
-Both modes prompt you to sync sessions and sidebar groupings so your session history, titles, and categories stay mirrored across modes. You can also sync manually at any time:
+Your sessions, sidebar, and project groupings are synced automatically during the switch so nothing is lost.
+
+And when your usage runs out again, switch back to Gateway mode:
 
 ```bash
-./claude-any-model sync-sessions
+./claude-any-model switch gateway
 ```
 
 Check the active mode and proxy health at any time:
