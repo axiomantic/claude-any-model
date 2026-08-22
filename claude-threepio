@@ -550,8 +550,11 @@ def run_model_configuration():
             "claude_name": "claude-opus-4",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "qwen/qwen3.7-plus", "Qwen 3.7 Plus", "$0.32/$1.28", "1M Context", True),
+                get_model_entry(catalog, "deepseek/deepseek-v3.2", "DeepSeek V3.2 (MoE)", "$0.26/$0.38", "163k Context", False),
                 get_model_entry(catalog, "google/gemini-3.7-flash", "Gemini 3.7 Flash", "$0.38/$1.88", "1M Context", True),
                 get_model_entry(catalog, "moonshotai/kimi-k2.5", "Kimi K2.5", "$0.45/$2.25", "262k Context", False),
+                get_model_entry(catalog, "deepseek/deepseek-r1-0528", "DeepSeek R1", "$0.50/$2.15", "163k Context", False),
                 get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2", "$0.97/$3.04", "1M Context", True),
                 get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True),
                 get_model_entry(catalog, "openai/gpt-5.6-terra", "GPT-5.6 Terra", "$2.00/$12.00", "1M Context", True),
@@ -572,10 +575,12 @@ def run_model_configuration():
             "claude_name": "claude-sonnet-4-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True, is_recommended=True),
-                get_model_entry(catalog, "qwen/qwen3-coder-next", "Qwen3 Coder Next", "$0.12/$0.80", "262k Context", False),
+                get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True),
                 get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
+                get_model_entry(catalog, "qwen/qwen3-coder-next", "Qwen3 Coder Next", "$0.12/$0.80", "262k Context", False),
                 get_model_entry(catalog, "mistralai/ministral-8b-2512", "Ministral 8B", "$0.15/$0.15", "262k Context", False),
                 get_model_entry(catalog, "qwen/qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "$0.07/$0.28", "262k Context", False),
+                get_model_entry(catalog, "mistralai/codestral-2508", "Codestral 2508", "$0.30/$0.90", "256k Context", False),
                 get_model_entry(catalog, "qwen/qwen3-coder-flash", "Qwen3 Coder Flash", "$0.20/$0.97", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-chat", "DeepSeek V3", "$0.26/$1.03", "163k Context", False),
                 get_model_entry(catalog, "anthropic/claude-sonnet-4", "Claude Sonnet 4", "$3.00/$15.00", "1M Context", True),
@@ -597,8 +602,14 @@ def run_model_configuration():
             "tier_label": "HAIKU TIER (Maximum Speed & Low Cost)",
             "claude_name": "claude-3-haiku-20240307",
             "options": [
-                get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "mistralai/mistral-nemo", "Mistral NeMo", "$0.02/$0.03", "131k Context", False),
+                get_model_entry(catalog, "inclusionai/ling-3.0-flash", "Ling 3.0 Flash", "$0.02/$0.06", "262k Context", False),
+                get_model_entry(catalog, "openai/gpt-oss-120b", "GPT-OSS 120B", "$0.03/$0.17", "131k Context", False),
+                get_model_entry(catalog, "amazon/nova-micro-v1", "Amazon Nova Micro", "$0.04/$0.14", "128k Context", False),
+                get_model_entry(catalog, "meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B", "$0.05/$0.08", "131k Context", False),
                 get_model_entry(catalog, "qwen/qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "$0.07/$0.28", "262k Context", False),
+                get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True),
                 get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
                 get_model_entry(catalog, "mistralai/ministral-8b-2512", "Ministral 8B", "$0.15/$0.15", "262k Context", False),
                 get_model_entry(catalog, "openai/gpt-5.6-luna", "GPT-5.6 Luna", "$0.20/$1.20", "1M Context", True),
@@ -620,6 +631,7 @@ def run_model_configuration():
             "claude_name": "claude-fable-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "qwen/qwen3.7-plus", "Qwen 3.7 Plus", "$0.32/$1.28", "1M Context", True),
                 get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2", "$0.97/$3.04", "1M Context", True),
                 get_model_entry(catalog, "moonshotai/kimi-k2.5", "Kimi K2.5", "$0.45/$2.25", "262k Context", False),
                 get_model_entry(catalog, "moonshotai/kimi-k3", "Kimi K3", "$3.00/$15.00", "1M Context", True),
@@ -649,6 +661,7 @@ def run_model_configuration():
             ]),
         },
     ]
+
 
 
     header(f"Configure Inference Models for Claude Desktop (Curated: {MODELS_LAST_REVISITED})")
