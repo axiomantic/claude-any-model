@@ -820,6 +820,60 @@ TIER_FAMILY_SLOTS = {
         ],
     }
 
+def clean_model_display_name(name):
+    """Strip redundant tag suffixes and verbose prefixes for dense Claude UI display."""
+    if not name:
+        return ""
+    n = re.sub(r"\s*\((?:Stealth\s+)?Free\)", "", name, flags=re.I)
+    n = re.sub(r"\s*\(Local\)", "", n, flags=re.I)
+    n = re.sub(r"\s*550B(?:-A55B)?", "", n, flags=re.I)
+    n = re.sub(r"\s*30B(?:-A3B)?", "", n, flags=re.I)
+    n = n.replace("Lightning", "Light").replace("Instruct", "Inst")
+    if n.startswith("Claude "):
+        n = n[len("Claude "):]
+    return n.strip()
+
+def format_dense_price(p):
+    """Format price string densely for Claude Desktop dropdowns without leading zeros or clutter."""
+    if not p or "$0.00" in p or "Free" in p or ":free" in p:
+        return "Free"
+    if "Local" in p:
+        return "Local"
+    parts = re.findall(r"\$([0-9.]+)", p)
+    if not parts:
+        return p
+    out = float(parts[-1])
+    if out == 0:
+        return "Free"
+    elif out < 1.0:
+        cents = int(round(out * 100))
+        return f"{cents}¢"
+    elif out == int(out):
+        return f"${int(out)}"
+    else:
+        rounded = round(out)
+        return f"~${rounded}" if abs(out - rounded) > 0.05 else f"${rounded}"
+
+def format_slot_badge(tier, slot_idx, canonical):
+    """Format short, dense tier and version variant badge for Claude UI dropdowns."""
+    if slot_idx == 1:
+        return f"[{tier.capitalize()}]"
+    if "3-7-sonnet" in canonical:
+        return "[Sonnet 3.7]"
+    if "3-5-sonnet" in canonical:
+        return "[Sonnet 3.5]"
+    if "sonnet-4" in canonical:
+        return "[Sonnet 4]"
+    if "3-opus" in canonical:
+        return "[Opus 3]"
+    if "3-5-haiku" in canonical:
+        return "[Haiku 3.5]"
+    if "instant" in canonical:
+        return "[Instant]"
+    if "preview" in canonical:
+        return f"[{tier.capitalize()} Prev]"
+    return f"[{tier.capitalize()} {slot_idx}]"
+
 def build_all_slot_mappings(tier_selections):
     """Generate complete slot mapping list, alias normalization map, and canonical set."""
     all_mappings = []
@@ -2219,10 +2273,13 @@ strict_guardrail = StrictModelGuardrail()
         if canon in seen_canons:
             continue
         seen_canons.add(canon)
-        d = s["model_entry"]
+        badge = format_slot_badge(s["tier"], s["slot_index"], canon)
+        clean_name = clean_model_display_name(d.get("name", canon))
+        dense_price = format_dense_price(d.get("price_str", ""))
+        label_override = f"{badge} {clean_name} · {dense_price}"
         inference_models.append({
             "name": canon,
-            "labelOverride": f"{d.get('name', canon)} ({s['label']})",
+            "labelOverride": label_override,
             "supports1m": bool(d.get("supports1m")),
             "prefer1m": bool(d.get("supports1m")),
             "anthropicFamilyTier": s["tier"],
