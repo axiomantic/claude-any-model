@@ -20,7 +20,7 @@ You're on a Claude Max plan. You hit your weekly credit limit. The work isn't do
 
 None of these are good. This project exists for option four:
 
-4. **Stay in Claude Code and Claude Desktop. Route the same requests to any model on OpenRouter** — at 80-95% lower cost. Your sessions, projects, sidebar, and workflow don't change. You just stop paying Claude's per-token overage and start paying the open market rate.
+4. **Stay in Claude Code and Claude Desktop. Route requests to cheaper models on OpenRouter** — at 80-95% lower cost. Your sessions, projects, sidebar, and workflow don't change. This tool maps each Claude tier (Opus, Sonnet, Haiku, etc.) to a recommended equivalent model automatically, or you can pick your own custom model for any tier.
 
 A typical day of coding that would cost $50-200+ in Claude overage costs $2-5 on OpenRouter with equivalent-quality models.
 
