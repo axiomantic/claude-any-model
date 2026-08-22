@@ -1031,6 +1031,11 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 add_field("Display Name: ", d["name"], curses.A_BOLD)
                 add_field("Model ID:     ", d["id"], curses.color_pair(1))
                 
+                if d.get("provider") == "openrouter" and not d["id"].startswith("custom/"):
+                    add_field("OpenRouter:   ", f"https://openrouter.ai/{d['id']}", curses.color_pair(1))
+                elif d.get("provider") == "ollama":
+                    add_field("Ollama URL:   ", "http://localhost:11434", curses.color_pair(1))
+
                 prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
                 add_field("Provider:     ", prov_name, 0)
                 add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)

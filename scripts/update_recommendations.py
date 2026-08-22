@@ -208,7 +208,8 @@ JSON Format Schema:
           "id": "exact_openrouter_model_id",
           "name": "Clean Display Name",
           "is_recommended": true,
-          "rationale": "Why included in curated options"
+          "rationale": "Why included in curated options",
+          "description": "Comprehensive multi-sentence / multi-bullet technical profile (architecture, key benchmarks, 1M context support, and Claude Desktop tier match) with NO truncation or ellipsis."
         }}
       ]
     }}
@@ -329,8 +330,8 @@ def generate_comparative_markdown_report(analysis_result, current_tiers, catalog
 
         # Full proposed options table
         lines.append("#### 📋 Full Proposed Options for Tier")
-        lines.append("| Model ID | Display Name | Live Price ($In / $Out) | Context | Status | Rationale |")
-        lines.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
+        lines.append("| Model ID | Display Name | Live Price ($In / $Out) | Context | Status | Link | Rationale |")
+        lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
         for opt in tc.get("options", []):
             mid = opt.get("id", "")
@@ -347,7 +348,8 @@ def generate_comparative_markdown_report(analysis_result, current_tiers, catalog
                 ctx_str = "1M Context"
 
             badge = "**⭐ Recommended**" if is_rec else "Alternative"
-            lines.append(f"| `{mid}` | {name} | **{price_str}** | {ctx_str} | {badge} | {rat} |")
+            link_str = f"[`{mid}`](https://openrouter.ai/{mid})"
+            lines.append(f"| {link_str} | {name} | **{price_str}** | {ctx_str} | {badge} | [View](https://openrouter.ai/{mid}) | {rat} |")
         lines.append("\n---\n")
 
     lines.append("## 💡 Maintainer Action Items")
@@ -362,7 +364,7 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
         warn(f"{setup_path} not found.")
         return
 
-    info(f"Applying comparative tier recommendations to {setup_path}...")
+    info(f"Applying comparative tier recommendations and rich descriptions to {setup_path}...")
     with open(setup_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -370,6 +372,8 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
     current_tiers = extract_current_tiers(setup_path)
     ollama_by_tier = {t["tier_name"]: t.get("ollama_block") for t in current_tiers}
 
+    # Collect curated descriptions from proposed options
+    new_descriptions = {}
     tier_blocks = []
     for tc in analysis_result.get("tier_comparisons", []):
         tname = tc.get("tier_name", "")
@@ -378,6 +382,9 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
             mid = opt.get("id", "")
             name = opt.get("name", mid)
             is_rec = "True" if opt.get("is_recommended", False) else "False"
+            desc = opt.get("description", "").strip()
+            if desc and mid:
+                new_descriptions[mid] = desc
             
             cat_item = catalog_map.get(mid)
             if cat_item:
@@ -418,6 +425,31 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
         flags=re.DOTALL
     )
 
+    # Update CURATED_DESCRIPTIONS if new descriptions were generated
+    if new_descriptions:
+        desc_lines = ["CURATED_DESCRIPTIONS = {"]
+        # Merge existing descriptions from file if parseable
+        existing_desc_match = re.search(r"CURATED_DESCRIPTIONS\s*=\s*\{([^}]+)\}", content, re.DOTALL)
+        merged_dict = {}
+        if existing_desc_match:
+            try:
+                # Safe eval of dict content
+                exec(f"existing_map = {{{existing_desc_match.group(1)}}}", {}, merged_dict)
+                merged_dict = merged_dict.get("existing_map", {})
+            except Exception:
+                pass
+        merged_dict.update(new_descriptions)
+        for k, v in merged_dict.items():
+            clean_v = v.replace('"', '\\"').replace('\n', '\\n')
+            desc_lines.append(f'    "{k}": "{clean_v}",')
+        desc_lines.append("}")
+        new_desc_block = "\n".join(desc_lines)
+        updated = re.sub(
+            r"CURATED_DESCRIPTIONS\s*=\s*\{.*?\n\}",
+            new_desc_block,
+            updated,
+            flags=re.DOTALL
+        )
 
     updated = re.sub(
         r'^MODELS_LAST_REVISITED="[^"]+"',
@@ -434,7 +466,7 @@ def apply_comparative_recommendations(analysis_result, catalog_map, today_str, s
 
     with open(setup_path, "w", encoding="utf-8") as f:
         f.write(updated)
-    success(f"Successfully updated tier definitions and timestamp ({today_str}) in {setup_path}.")
+    success(f"Successfully updated tier definitions, curated descriptions, and timestamp ({today_str}) in {setup_path}.")
 
 def main():
     apply_mode = "--apply" in sys.argv
