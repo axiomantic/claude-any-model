@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.13.0 (2026-08-21)
+
+### Added
+
+* **Linux support.** The proxy daemon installs as a systemd user service on Linux (instead of launchd on macOS). All commands (`install`, `start`, `stop`, `restart`, `status`, `uninstall`) are platform-aware. Claude Desktop 3P mode config paths use `~/.config/Claude-3p/` on Linux and `~/Library/Application Support/Claude-3p/` on macOS. Claude Desktop fully supports 3P mode on Linux — same Electron app, same profile schema, same gateway configuration.
+
 ## 1.12.0 (2026-08-21)
 
 ### Added

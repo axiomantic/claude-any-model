@@ -1,7 +1,7 @@
 # Claude Any Model
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://claude.ai)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-purple.svg)](https://openrouter.ai)
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
 [![Release](https://img.shields.io/github/v/release/axiomantic/claude-any-model?include_prereleases&color=green)](https://github.com/axiomantic/claude-any-model/releases)
@@ -70,7 +70,7 @@ Gateway mode is Claude Desktop's **3P mode** (Third-Party Inference) configured 
 
 ### Automated Configuration (Recommended)
 
-Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon and Claude Desktop's 3P profile in `~/Library/Application Support/Claude-3p/configLibrary/`.
+Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon (launchd on macOS, systemd user service on Linux) and Claude Desktop's 3P profile. The 3P config directory is `~/Library/Application Support/Claude-3p/configLibrary/` on macOS, or `~/.config/Claude-3p/configLibrary/` on Linux.
 
 ### Manual GUI Verification
 
@@ -95,7 +95,7 @@ By default, Gateway mode disables the migration UI with the message:
 
 To unlock it:
 * **Automatic:** Running `./setup.sh install` or `./setup.sh models` automatically enables this setting in your active profile.
-* **Manual:** Add the `claudeAiImport` block to your active profile in `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`:
+* **Manual:** Add the `claudeAiImport` block to your active 3P profile. On macOS this is `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`; on Linux it is `~/.config/Claude-3p/configLibrary/<profile-id>.json`:
   ```json
   "claudeAiImport": {
     "enabled": true,

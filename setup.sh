@@ -90,12 +90,26 @@ import urllib.request
 from datetime import datetime
 
 # Script & Daemon Metadata
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 MODELS_LAST_REVISITED = "2026-08-21"
 PORT = 3010
 PLIST_LABEL = "com.claude-any-model"
 APP_DIR = os.path.expanduser("~/.claude-any-model")
 PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{PLIST_LABEL}.plist")
+SYSTEMD_USER_DIR = os.path.expanduser("~/.config/systemd/user")
+SYSTEMD_UNIT = "claude-any-model.service"
+
+# Platform-aware Claude Desktop support directories.
+# macOS:  ~/Library/Application Support/Claude[-3p]
+# Linux:  ~/.config/Claude[-3p]  (XDG_CONFIG_HOME)
+if platform.system() == "Linux":
+    CLAUDE_1P_SUPPORT = os.path.expanduser("~/.config/Claude")
+    CLAUDE_3P_SUPPORT = os.path.expanduser("~/.config/Claude-3p")
+else:
+    CLAUDE_1P_SUPPORT = os.path.expanduser("~/Library/Application Support/Claude")
+    CLAUDE_3P_SUPPORT = os.path.expanduser("~/Library/Application Support/Claude-3p")
+CLAUDE_1P_CONFIG = os.path.join(CLAUDE_1P_SUPPORT, "claude_desktop_config.json")
+CLAUDE_3P_CONFIG = os.path.join(CLAUDE_3P_SUPPORT, "claude_desktop_config.json")
 
 # All model name strings that clients (Claude Code, Claude Desktop, SDK) may send,
 # mapped to the canonical claude_name used in config.yaml.
@@ -199,10 +213,15 @@ def ensure_dirs():
     os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
     if platform.system() == "Darwin":
         os.makedirs(os.path.expanduser("~/Library/LaunchAgents"), exist_ok=True)
+    elif platform.system() == "Linux":
+        os.makedirs(SYSTEMD_USER_DIR, exist_ok=True)
 
 def is_claude_running():
     try:
-        res = subprocess.run(["pgrep", "-f", "Claude.app"], capture_output=True)
+        if platform.system() == "Darwin":
+            res = subprocess.run(["pgrep", "-f", "Claude.app"], capture_output=True)
+        else:
+            res = subprocess.run(["pgrep", "-f", "[Cc]laude"], capture_output=True)
         return res.returncode == 0
     except Exception:
         return False
@@ -210,7 +229,8 @@ def is_claude_running():
 def check_claude_closed():
     if is_claude_running():
         warn("Claude Desktop is currently running.")
-        print("Please quit Claude Desktop (\033[1;36mCmd+Q\033[0m) so updated model profiles load cleanly.", file=sys.stderr)
+        quit_hint = "Ctrl+Q or close the window" if platform.system() != "Darwin" else "Cmd+Q"
+        print(f"Please quit Claude Desktop (\033[1;36m{quit_hint}\033[0m) so updated model profiles load cleanly.", file=sys.stderr)
         safe_input("Press [Enter] once Claude Desktop is closed... ")
         while is_claude_running():
             warn("Claude Desktop is still running. Please quit Claude Desktop completely.")
@@ -224,7 +244,7 @@ def validate_openrouter_key(api_key):
         "https://openrouter.ai/api/v1/auth/key",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Claude-Any-Model/1.12.0"
+            "User-Agent": "Claude-Any-Model/1.13.0"
         }
     )
     try:
@@ -434,7 +454,7 @@ def fetch_openrouter_catalog():
     info("Fetching live model catalog & pricing from OpenRouter API...")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/models",
-        headers={"User-Agent": "Claude-Any-Model/1.12.0"}
+        headers={"User-Agent": "Claude-Any-Model/1.13.0"}
     )
     catalog = {}
     try:
@@ -1010,15 +1030,13 @@ fi
     success(f"Runner script created at: {runner}")
 
 def install_service():
-    if platform.system() != "Darwin":
-        info("Non-macOS system: Launch proxy manually using ~/.claude-any-model/run_proxy.sh")
-        return
-
-    launch_agents = os.path.expanduser("~/Library/LaunchAgents")
-    os.makedirs(launch_agents, exist_ok=True)
     runner = os.path.join(APP_DIR, "run_proxy.sh")
 
-    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+    if platform.system() == "Darwin":
+        launch_agents = os.path.expanduser("~/Library/LaunchAgents")
+        os.makedirs(launch_agents, exist_ok=True)
+
+        plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -1041,12 +1059,43 @@ def install_service():
 </dict>
 </plist>
 """
-    with open(PLIST_PATH, "w", encoding="utf-8") as f:
-        f.write(plist_content)
+        with open(PLIST_PATH, "w", encoding="utf-8") as f:
+            f.write(plist_content)
 
-    subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
-    subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
-    success(f"LaunchAgent registered and loaded: {PLIST_PATH}")
+        subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
+        subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
+        success(f"LaunchAgent registered and loaded: {PLIST_PATH}")
+
+    elif platform.system() == "Linux":
+        os.makedirs(SYSTEMD_USER_DIR, exist_ok=True)
+        unit_path = os.path.join(SYSTEMD_USER_DIR, SYSTEMD_UNIT)
+
+        unit_content = f"""[Unit]
+Description=Claude Any Model Proxy (LiteLLM)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={runner}
+WorkingDirectory={APP_DIR}
+StandardOutput=append:{APP_DIR}/logs/litellm.out.log
+StandardError=append:{APP_DIR}/logs/litellm.err.log
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+"""
+        with open(unit_path, "w", encoding="utf-8") as f:
+            f.write(unit_content)
+
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+        subprocess.run(["systemctl", "--user", "enable", SYSTEMD_UNIT], capture_output=True)
+        subprocess.run(["systemctl", "--user", "restart", SYSTEMD_UNIT], capture_output=True)
+        success(f"Systemd user service installed and started: {unit_path}")
+
+    else:
+        info(f"Unsupported platform. Launch proxy manually using {runner}")
 
 def uninstall_service():
     check_claude_closed()
@@ -1058,6 +1107,17 @@ def uninstall_service():
         except Exception:
             pass
         success(f"Unloaded and removed {PLIST_PATH}")
+
+    elif platform.system() == "Linux":
+        unit_path = os.path.join(SYSTEMD_USER_DIR, SYSTEMD_UNIT)
+        subprocess.run(["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True)
+        subprocess.run(["systemctl", "--user", "disable", SYSTEMD_UNIT], capture_output=True)
+        try:
+            os.remove(unit_path)
+        except Exception:
+            pass
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+        success(f"Stopped and removed {unit_path}")
 
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
     if os.path.exists(meta_path):
@@ -1166,10 +1226,10 @@ def sync_sessions():
     Unions group assignments and starred sessions (account-agnostic keys).
     Shows a stats preview and prompts before making changes.
     """
-    claude_1p_support = os.path.expanduser("~/Library/Application Support/Claude")
-    claude_3p_support = os.path.expanduser("~/Library/Application Support/Claude-3p")
-    cfg_1p = os.path.join(claude_1p_support, "claude_desktop_config.json")
-    cfg_3p = os.path.join(claude_3p_support, "claude_desktop_config.json")
+    claude_1p_support = CLAUDE_1P_SUPPORT
+    claude_3p_support = CLAUDE_3P_SUPPORT
+    cfg_1p = CLAUDE_1P_CONFIG
+    cfg_3p = CLAUDE_3P_CONFIG
     sessions_1p_root = os.path.join(claude_1p_support, "claude-code-sessions")
     sessions_3p_root = os.path.join(claude_3p_support, "claude-code-sessions")
 
@@ -1378,8 +1438,7 @@ def switch_claude_mode(target_mode="toggle"):
 
     elif target_mode == "gateway":
         info("Switching Claude Desktop to GATEWAY MODE (OpenRouter & Local Inference Proxy)...")
-        if platform.system() == "Darwin":
-            install_service()
+        install_service()
 
         profile_id = None
         if os.path.exists(state_file):
@@ -1458,6 +1517,12 @@ def status_service():
             success(f"Daemon {PLIST_LABEL} (v{VERSION}) is RUNNING.")
         else:
             warn(f"Daemon {PLIST_LABEL} is NOT running.")
+    elif platform.system() == "Linux":
+        res = subprocess.run(["systemctl", "--user", "is-active", SYSTEMD_UNIT], capture_output=True, text=True)
+        if res.stdout.strip() == "active":
+            success(f"Daemon {SYSTEMD_UNIT} (v{VERSION}) is RUNNING.")
+        else:
+            warn(f"Daemon {SYSTEMD_UNIT} is NOT running.")
 
     # Check local engines
     local_engines = fetch_local_engines()
@@ -1603,7 +1668,7 @@ def _set_egress_allowlist(hosts):
             pass
 
     # Also set in claude_desktop_config.json preferences
-    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude-3p/claude_desktop_config.json")
+    desktop_config_path = CLAUDE_3P_CONFIG
     if os.path.exists(desktop_config_path):
         try:
             with open(desktop_config_path, "r", encoding="utf-8") as f:
@@ -1670,7 +1735,7 @@ def remove_sandbox_network_config():
             pass
 
     # Remove from claude_desktop_config.json preferences
-    desktop_config_path = os.path.expanduser("~/Library/Application Support/Claude-3p/claude_desktop_config.json")
+    desktop_config_path = CLAUDE_3P_CONFIG
     if os.path.exists(desktop_config_path):
         try:
             with open(desktop_config_path, "r", encoding="utf-8") as f:
@@ -1722,7 +1787,10 @@ def post_setup_prompt():
     if not is_claude_running():
         ans = safe_input("Would you like to open Claude Desktop now? (Y/n): ", "y").lower()
         if ans in ("y", "yes", ""):
-            subprocess.run(["open", "-a", "Claude"], check=False)
+            if platform.system() == "Darwin":
+                subprocess.run(["open", "-a", "Claude"], check=False)
+            else:
+                subprocess.run(["xdg-open", "claude://"], check=False)
             success("Claude Desktop launched.")
 
 def usage():
@@ -1731,12 +1799,12 @@ def usage():
     print("Commands:", file=sys.stderr)
     print("  switch [mode]  - Toggle or switch between 'gateway' and 'regular' (native) Claude mode", file=sys.stderr)
     print("  launch [args]  - Launch Claude CLI routed through the local proxy (sets ANTHROPIC_BASE_URL)", file=sys.stderr)
-    print("  install        - Full setup: venv, API key, live model selector, Claude 3P config & launchd daemon", file=sys.stderr)
+    print("  install        - Full setup: venv, API key, live model selector, Claude 3P config & daemon", file=sys.stderr)
     print("  models         - Live model selector only (updates LiteLLM YAML & Claude 3P config without reinstalling)", file=sys.stderr)
-    print("  status         - Checks active mode, launchd daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
-    print("  start          - Starts the launchd daemon", file=sys.stderr)
-    print("  stop           - Stops the launchd daemon", file=sys.stderr)
-    print("  restart        - Restarts the launchd daemon", file=sys.stderr)
+    print("  status         - Checks active mode, daemon status, proxy connectivity, and Claude 3P profiles", file=sys.stderr)
+    print("  start          - Starts the daemon", file=sys.stderr)
+    print("  stop           - Stops the daemon", file=sys.stderr)
+    print("  restart        - Restarts the daemon", file=sys.stderr)
     print("  uninstall      - Unregisters launchd daemon", file=sys.stderr)
     print("  sync-sessions  - Merge session metadata and sidebar groupings between 1P and 3P modes", file=sys.stderr)
     print("  version        - Displays the current proxy script version", file=sys.stderr)
@@ -1765,10 +1833,9 @@ def main():
     elif cmd == "models":
         ensure_dirs()
         run_model_configuration()
-        if platform.system() == "Darwin":
-            info("Restarting proxy to apply new YAML configuration...")
-            install_service()
-            success("Proxy restarted with updated configuration.")
+        info("Restarting proxy to apply new YAML configuration...")
+        install_service()
+        success("Proxy restarted with updated configuration.")
         status_service()
         post_setup_prompt()
     elif cmd == "status":
@@ -1779,11 +1846,19 @@ def main():
         install_service()
         status_service()
     elif cmd == "start":
-        subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
-        success(f"Started {PLIST_LABEL}")
+        if platform.system() == "Darwin":
+            subprocess.run(["launchctl", "load", PLIST_PATH], capture_output=True)
+            success(f"Started {PLIST_LABEL}")
+        elif platform.system() == "Linux":
+            subprocess.run(["systemctl", "--user", "start", SYSTEMD_UNIT], capture_output=True)
+            success(f"Started {SYSTEMD_UNIT}")
     elif cmd == "stop":
-        subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
-        success("Stopped proxy daemon")
+        if platform.system() == "Darwin":
+            subprocess.run(["launchctl", "unload", PLIST_PATH], capture_output=True)
+            success("Stopped proxy daemon")
+        elif platform.system() == "Linux":
+            subprocess.run(["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True)
+            success("Stopped proxy daemon")
     elif cmd == "uninstall":
         remove_sandbox_network_config()
         uninstall_service()
