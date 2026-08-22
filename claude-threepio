@@ -638,9 +638,15 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
         except Exception:
             pass
 
+        try:
+            curses.set_escdelay(25)
+        except Exception:
+            pass
+
         scroll_top = 0
         info_scroll_top = 0
         input_num_buf = ""
+        show_preview = True
 
         while True:
             stdscr.erase()
@@ -654,7 +660,7 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     pass
                 stdscr.refresh()
                 k = stdscr.getch()
-                if k in (ord('q'), ord('Q'), 27):
+                if k in (ord('q'), ord('Q')):
                     return None
                 continue
 
@@ -666,10 +672,17 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
             except Exception:
                 pass
 
-            left_w = min(48, max(36, int(max_x * 0.38)))
-            divider_x = left_w + 1
-            right_x = divider_x + 2
-            right_w = max(24, max_x - right_x - 1)
+            if show_preview and max_x >= 70:
+                left_w = min(48, max(36, int(max_x * 0.38)))
+                divider_x = left_w + 1
+                right_x = divider_x + 2
+                right_w = max(24, max_x - right_x - 1)
+            else:
+                left_w = max_x - 2
+                divider_x = None
+                right_x = None
+                right_w = 0
+
             body_h = max_y - 3
 
             curr_item_idx = selectable_indices[selected_sel_idx]
@@ -741,120 +754,123 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     except Exception:
                         pass
 
-            # Center Vertical Divider
-            for y in range(1, max_y - 1):
-                try:
-                    stdscr.attron(curses.color_pair(6))
-                    stdscr.addstr(y, divider_x, "│")
-                    stdscr.attroff(curses.color_pair(6))
-                except Exception:
-                    pass
+            # Center Vertical Divider & Right Pane (if preview active)
+            if show_preview and divider_x and right_x and right_w > 0:
+                for y in range(1, max_y - 1):
+                    try:
+                        stdscr.attron(curses.color_pair(6))
+                        stdscr.addstr(y, divider_x, "│")
+                        stdscr.attroff(curses.color_pair(6))
+                    except Exception:
+                        pass
 
-            # Render Right Pane (Model Details & Capabilities)
-            cur_selected_item = display_items[curr_item_idx]
-            detail_lines = []
-            d = cur_selected_item["data"]
+                cur_selected_item = display_items[curr_item_idx]
+                detail_lines = []
+                d = cur_selected_item["data"]
 
-            def add_field(label, val, attr=0):
-                if not val:
-                    return
-                max_w = max(6, right_w - len(label))
-                if len(val) <= max_w:
-                    detail_lines.append((label, val, attr))
-                else:
-                    wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
-                    detail_lines.append((label, "", curses.A_BOLD))
-                    for w_part in wrapped:
-                        detail_lines.append(("", "  " + w_part, attr))
-
-            add_field("Display Name: ", d["name"], curses.A_BOLD)
-            add_field("Model ID:     ", d["id"], curses.color_pair(1))
-            
-            prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
-            add_field("Provider:     ", prov_name, 0)
-            add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)
-            add_field("Context:      ", d.get("ctx_str", "N/A"), curses.color_pair(5))
-            
-            s1m_str = "[1M Context Enabled]" if d.get("supports1m") else "[Standard Context Window]"
-            s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
-            add_field("1M Support:   ", s1m_str, s1m_color)
-
-            status_tags = []
-            if cur_selected_item.get("is_recommended"):
-                status_tags.append("(Recommended Choice)")
-            if cur_selected_item.get("is_current"):
-                status_tags.append("[CURRENTLY CONFIGURED]")
-            if ":free" in d.get("id", "") or "$0.00" in d.get("price_str", ""):
-                status_tags.append("[$0.00 Free Inference]")
-            
-            if status_tags:
-                add_field("Status:       ", " | ".join(status_tags), curses.color_pair(4) | curses.A_BOLD)
-
-            detail_lines.append(("", "", 0))
-            detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
-
-            desc_text = d.get("desc") or f"Curated model for {tier['tier_name'].upper()} tier tasks."
-            for p in desc_text.split("\n"):
-                if p.strip():
-                    wrapped = textwrap.wrap(p, width=right_w)
-                    for wl in wrapped:
-                        detail_lines.append(("", wl, 0))
-                else:
-                    detail_lines.append(("", "", 0))
-
-            card_y = 2
-            card_rows = max_y - 3
-
-            max_info_scroll = max(0, len(detail_lines) - card_rows)
-            info_scroll_top = min(info_scroll_top, max_info_scroll)
-
-            # Right Pane Section Header
-            try:
-                scroll_hint = " (d/u to scroll)" if max_info_scroll > 0 else ""
-                hdr_title = f"── Model Details & Capabilities{scroll_hint} "
-                dashes = max(0, right_w - len(hdr_title))
-                full_hdr = (hdr_title + ("─" * dashes))[:right_w]
-                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addstr(1, right_x, full_hdr)
-                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-            except Exception:
-                pass
-
-            for row_idx in range(card_rows):
-                line_y = card_y + row_idx
-                detail_idx = info_scroll_top + row_idx
-                try:
-                    if detail_idx < len(detail_lines):
-                        label, val, attr = detail_lines[detail_idx]
-                        content = (label + val)[:right_w]
-                        line_text = content.ljust(right_w)
+                def add_field(label, val, attr=0):
+                    if not val:
+                        return
+                    max_w = max(6, right_w - len(label))
+                    if len(val) <= max_w:
+                        detail_lines.append((label, val, attr))
                     else:
-                        label, val, attr = "", "", 0
-                        line_text = " " * right_w
+                        wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
+                        detail_lines.append((label, "", curses.A_BOLD))
+                        for w_part in wrapped:
+                            detail_lines.append(("", "  " + w_part, attr))
 
-                    # Draw base line wiping any old characters completely
-                    stdscr.addstr(line_y, right_x, line_text[:right_w])
+                add_field("Display Name: ", d["name"], curses.A_BOLD)
+                add_field("Model ID:     ", d["id"], curses.color_pair(1))
+                
+                prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
+                add_field("Provider:     ", prov_name, 0)
+                add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)
+                add_field("Context:      ", d.get("ctx_str", "N/A"), curses.color_pair(5))
+                
+                s1m_str = "[1M Context Enabled]" if d.get("supports1m") else "[Standard Context Window]"
+                s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
+                add_field("1M Support:   ", s1m_str, s1m_color)
 
-                    # Highlight formatted attributes
-                    if detail_idx < len(detail_lines):
-                        if label and not val and attr:
-                            stdscr.attron(attr)
-                            stdscr.addstr(line_y, right_x, label[:right_w])
-                            stdscr.attroff(attr)
-                        else:
-                            if label:
-                                stdscr.attron(curses.A_BOLD)
-                                stdscr.addstr(line_y, right_x, label[:right_w])
-                                stdscr.attroff(curses.A_BOLD)
-                            if val and attr:
-                                stdscr.attron(attr)
-                                stdscr.addstr(line_y, right_x + len(label), val[:max(0, right_w - len(label))])
-                                stdscr.attroff(attr)
+                status_tags = []
+                if cur_selected_item.get("is_recommended"):
+                    status_tags.append("(Recommended Choice)")
+                if cur_selected_item.get("is_current"):
+                    status_tags.append("[CURRENTLY CONFIGURED]")
+                if ":free" in d.get("id", "") or "$0.00" in d.get("price_str", ""):
+                    status_tags.append("[$0.00 Free Inference]")
+                
+                if status_tags:
+                    add_field("Status:       ", " | ".join(status_tags), curses.color_pair(4) | curses.A_BOLD)
+
+                detail_lines.append(("", "", 0))
+                detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
+
+                desc_text = d.get("desc") or f"Curated model for {tier['tier_name'].upper()} tier tasks."
+                for p in desc_text.split("\n"):
+                    if p.strip():
+                        wrapped = textwrap.wrap(p, width=right_w)
+                        for wl in wrapped:
+                            detail_lines.append(("", wl, 0))
+                    else:
+                        detail_lines.append(("", "", 0))
+
+                card_y = 2
+                card_rows = max_y - 3
+
+                max_info_scroll = max(0, len(detail_lines) - card_rows)
+                info_scroll_top = min(info_scroll_top, max_info_scroll)
+
+                # Right Pane Section Header
+                try:
+                    scroll_hint = " (d/u to scroll)" if max_info_scroll > 0 else ""
+                    hdr_title = f"── Model Details & Capabilities{scroll_hint} "
+                    dashes = max(0, right_w - len(hdr_title))
+                    full_hdr = (hdr_title + ("─" * dashes))[:right_w]
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, right_x, full_hdr)
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
                 except Exception:
                     pass
+
+                for row_idx in range(card_rows):
+                    line_y = card_y + row_idx
+                    detail_idx = info_scroll_top + row_idx
+                    try:
+                        if detail_idx < len(detail_lines):
+                            label, val, attr = detail_lines[detail_idx]
+                            content = (label + val)[:right_w]
+                            line_text = content.ljust(right_w)
+                        else:
+                            label, val, attr = "", "", 0
+                            line_text = " " * right_w
+
+                        # Draw base line wiping any old characters completely
+                        stdscr.addstr(line_y, right_x, line_text[:right_w])
+
+                        # Highlight formatted attributes
+                        if detail_idx < len(detail_lines):
+                            if label and not val and attr:
+                                stdscr.attron(attr)
+                                stdscr.addstr(line_y, right_x, label[:right_w])
+                                stdscr.attroff(attr)
+                            else:
+                                if label:
+                                    stdscr.attron(curses.A_BOLD)
+                                    stdscr.addstr(line_y, right_x, label[:right_w])
+                                    stdscr.attroff(curses.A_BOLD)
+                                if val and attr:
+                                    stdscr.attron(attr)
+                                    stdscr.addstr(line_y, right_x + len(label), val[:max(0, right_w - len(label))])
+                                    stdscr.attroff(attr)
+                    except Exception:
+                        pass
+            else:
+                max_info_scroll = 0
 
             # Footer navigation bar
-            footer_text = " [↑/↓/j/k] Preview  •  [d/u] Scroll info  •  [1-N / Enter] Select  •  [q] Abort "
+            preview_toggle_label = "Hide info" if show_preview else "Show info"
+            footer_text = f" [↑/↓/j/k] Navigate  •  [d/u] Scroll  •  [Tab/ESC] {preview_toggle_label}  •  [1-N / Enter] Select  •  [q] Abort "
             if input_num_buf:
                 footer_text += f" • Jump: {input_num_buf}_"
             try:
@@ -880,6 +896,13 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 info_scroll_top = min(max_info_scroll, info_scroll_top + 4)
             elif key in (ord('u'), ord('U'), curses.KEY_PPAGE):
                 info_scroll_top = max(0, info_scroll_top - 4)
+            elif key in (ord('\t'), 9, ord('p'), ord('P'), ord('i'), ord('I')):
+                show_preview = not show_preview
+            elif key == 27:  # ESC
+                if input_num_buf:
+                    input_num_buf = ""
+                else:
+                    show_preview = not show_preview
             elif key in (curses.KEY_HOME, ord('g')):
                 selected_sel_idx = 0
                 info_scroll_top = 0
@@ -898,7 +921,7 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     except ValueError:
                         pass
                 return display_items[curr_item_idx]["num"]
-            elif key in (ord('q'), ord('Q'), 27):
+            elif key in (ord('q'), ord('Q')):
                 return None
             elif ord('0') <= key <= ord('9'):
                 input_num_buf += chr(key)
