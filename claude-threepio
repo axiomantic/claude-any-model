@@ -550,7 +550,9 @@ def run_model_configuration():
             "claude_name": "claude-opus-4",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B (Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
+                get_model_entry(catalog, "z-ai/glm-5.2:free", "GLM 5.2 (Free)", "$0.00/$0.00", "256k Context", False),
                 get_model_entry(catalog, "qwen/qwen3.7-plus", "Qwen 3.7 Plus", "$0.32/$1.28", "1M Context", True),
                 get_model_entry(catalog, "deepseek/deepseek-v3.2", "DeepSeek V3.2 (MoE)", "$0.26/$0.38", "163k Context", False),
                 get_model_entry(catalog, "google/gemini-3.7-flash", "Gemini 3.7 Flash", "$0.38/$1.88", "1M Context", True),
@@ -576,7 +578,10 @@ def run_model_configuration():
             "claude_name": "claude-sonnet-4-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "$0.08/$0.15", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "cohere/north-mini-code:free", "North Mini Code (Free)", "$0.00/$0.00", "256k Context", False),
+                get_model_entry(catalog, "poolside/laguna-s-2.1:free", "Poolside Laguna S 2.1 (Free)", "$0.00/$0.00", "262k Context", False),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
+                get_model_entry(catalog, "google/gemma-4-31b-it:free", "Gemma 4 31B (Free)", "$0.00/$0.00", "262k Context", False),
                 get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True),
                 get_model_entry(catalog, "google/gemini-2.0-flash-001", "Gemini 2.0 Flash", "$0.10/$0.40", "1M Context", True),
                 get_model_entry(catalog, "qwen/qwen3-coder-next", "Qwen3 Coder Next", "$0.12/$0.80", "262k Context", False),
@@ -605,6 +610,9 @@ def run_model_configuration():
             "claude_name": "claude-3-haiku-20240307",
             "options": [
                 get_model_entry(catalog, "qwen/qwen3.7-flash", "Qwen 3.7 Flash", "$0.03/$0.13", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning (Free)", "$0.00/$0.00", "1M Context", True),
+                get_model_entry(catalog, "thinkingmachines/inkling-small:free", "Inkling Small (Free)", "$0.00/$0.00", "262k Context", False),
+                get_model_entry(catalog, "nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano 30B (Free)", "$0.00/$0.00", "256k Context", False),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "mistralai/mistral-nemo", "Mistral NeMo", "$0.02/$0.03", "131k Context", False),
                 get_model_entry(catalog, "inclusionai/ling-3.0-flash", "Ling 3.0 Flash", "$0.02/$0.06", "262k Context", False),
@@ -634,6 +642,7 @@ def run_model_configuration():
             "claude_name": "claude-fable-5",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B (Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "qwen/qwen3.7-plus", "Qwen 3.7 Plus", "$0.32/$1.28", "1M Context", True),
                 get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2", "$0.97/$3.04", "1M Context", True),
@@ -654,6 +663,7 @@ def run_model_configuration():
             "claude_name": "claude-mythos-1",
             "options": [
                 get_model_entry(catalog, "deepseek/deepseek-v4-pro", "DeepSeek V4 Pro (Max)", "$0.50/$1.00", "1M Context", True, is_recommended=True),
+                get_model_entry(catalog, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B (Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "stealth/ox-alpha", "Ox Alpha (Stealth Free)", "$0.00/$0.00", "1M Context", True),
                 get_model_entry(catalog, "anthropic/claude-opus-5", "Claude Opus 5", "$5.00/$25.00", "1M Context", True),
                 get_model_entry(catalog, "z-ai/glm-5.2", "GLM-5.2 (Reasoning)", "$0.97/$3.04", "1M Context", True),
@@ -666,6 +676,7 @@ def run_model_configuration():
             ]),
         },
     ]
+
 
 
 
