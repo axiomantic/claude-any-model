@@ -681,16 +681,24 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
             y_offset = 2
             for row in range(body_h):
                 item_idx = scroll_top + row
-                if item_idx >= len(display_items):
-                    break
-                item = display_items[item_idx]
                 draw_y = y_offset + row
 
+                if item_idx >= len(display_items):
+                    try:
+                        stdscr.addstr(draw_y, 0, " " * (right_x))
+                    except Exception:
+                        pass
+                    continue
+
+                item = display_items[item_idx]
+
                 if item["type"] == "header":
+                    hdr_text = ("  " + item["label"]).ljust(left_w)[:left_w]
                     try:
                         stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                        stdscr.addstr(draw_y, 2, item["label"][:left_w - 2])
+                        stdscr.addstr(draw_y, 0, hdr_text)
                         stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(draw_y, left_w, " " * (right_x - left_w))
                     except Exception:
                         pass
                 else:
@@ -720,16 +728,17 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                     short_name = (name_str[:avail_name_w - 1] + "…") if len(name_str) > avail_name_w else name_str
 
                     cursor_char = "▶" if is_active else " "
-                    row_content = f"{cursor_char} {num_str} {short_name:<{avail_name_w}} {price_str:<12} {ctx_str} {badge_str}"
-                    row_content = row_content[:left_w - 1]
+                    row_content = f" {cursor_char} {num_str} {short_name:<{avail_name_w}} {price_str:<12} {ctx_str} {badge_str}"
+                    padded_row = row_content.ljust(left_w)[:left_w]
 
                     try:
                         if is_active:
                             stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
-                            stdscr.addstr(draw_y, 1, row_content.ljust(left_w - 1))
+                            stdscr.addstr(draw_y, 0, padded_row)
                             stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
                         else:
-                            stdscr.addstr(draw_y, 1, row_content)
+                            stdscr.addstr(draw_y, 0, padded_row)
+                        stdscr.addstr(draw_y, left_w, " " * (right_x - left_w))
                     except Exception:
                         pass
 
@@ -810,25 +819,30 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 try:
                     if detail_idx < len(detail_lines):
                         label, val, attr = detail_lines[detail_idx]
-                        content = label + val
-                        line_text = "│ " + content[:inner_w].ljust(inner_w) + " │"
+                        content = (label + val)[:inner_w]
+                        line_text = "│ " + content.ljust(inner_w) + " │"
                     else:
+                        label, val, attr = "", "", 0
                         line_text = "│ " + (" " * inner_w) + " │"
 
-                    # Draw base framed line
-                    stdscr.addstr(line_y, right_x, line_text)
+                    # Base framed line
+                    stdscr.addstr(line_y, right_x, line_text[:right_w])
 
-                    # Highlight formatted attributes if present
+                    # Highlight formatted attributes
                     if detail_idx < len(detail_lines):
-                        label, val, attr = detail_lines[detail_idx]
-                        if label:
-                            stdscr.attron(curses.A_BOLD)
-                            stdscr.addstr(line_y, right_x + 2, label)
-                            stdscr.attroff(curses.A_BOLD)
-                        if val and attr:
+                        if label and not val and attr:
                             stdscr.attron(attr)
-                            stdscr.addstr(line_y, right_x + 2 + len(label), val[:max(0, inner_w - len(label))])
+                            stdscr.addstr(line_y, right_x + 2, label[:inner_w])
                             stdscr.attroff(attr)
+                        else:
+                            if label:
+                                stdscr.attron(curses.A_BOLD)
+                                stdscr.addstr(line_y, right_x + 2, label[:inner_w])
+                                stdscr.attroff(curses.A_BOLD)
+                            if val and attr:
+                                stdscr.attron(attr)
+                                stdscr.addstr(line_y, right_x + 2 + len(label), val[:max(0, inner_w - len(label))])
+                                stdscr.attroff(attr)
                 except Exception:
                     pass
 
