@@ -477,7 +477,8 @@ def fetch_openrouter_catalog():
                     "name": m.get("name", mid),
                     "price_str": f"${p_in:.2f}/${p_out:.2f}",
                     "ctx_str": ctx_str,
-                    "supports1m": ctx >= 900_000
+                    "supports1m": ctx >= 900_000,
+                    "desc": m.get("description", ""),
                 }
         success(f"Loaded live pricing for {len(catalog)} models from OpenRouter API.")
     except Exception as e:
@@ -496,7 +497,8 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
             "supports1m": item["supports1m"],
             "provider": "openrouter",
             "api_base": None,
-            "is_recommended": is_recommended
+            "is_recommended": is_recommended,
+            "desc": item.get("desc", ""),
         }
     return {
         "id": model_id,
@@ -507,8 +509,354 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
         "supports1m": fallback_1m,
         "provider": "openrouter",
         "api_base": None,
-        "is_recommended": is_recommended
+        "is_recommended": is_recommended,
+        "desc": "",
     }
+
+def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_idx, recommended_idx, current_model_id):
+    """Interactive 2-pane curses TUI model selector.
+    
+    Left pane: Scrollable model list grouped by provider with highlight navigation.
+    Right pane: Live metadata and description inspector for the selected model.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+
+    import curses
+    import textwrap
+
+    display_items = []
+    
+    # 1. OpenRouter options
+    openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
+    if openrouter_opts:
+        display_items.append({"type": "header", "label": "☁  OpenRouter Cloud"})
+        for opt_idx, opt in enumerate(all_options, 1):
+            if opt.get("provider") == "openrouter":
+                display_items.append({
+                    "type": "model",
+                    "num": opt_idx,
+                    "data": opt,
+                    "is_current": (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id)),
+                    "is_recommended": bool(opt.get("is_recommended")),
+                })
+
+    # 2. Ollama options
+    ollama_opts = [o for o in all_options if o.get("provider") == "ollama"]
+    if ollama_opts:
+        display_items.append({"type": "header", "label": "⬡  Ollama (Local Inference)"})
+        for opt_idx, opt in enumerate(all_options, 1):
+            if opt.get("provider") == "ollama":
+                display_items.append({
+                    "type": "model",
+                    "num": opt_idx,
+                    "data": opt,
+                    "is_current": (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id)),
+                    "is_recommended": bool(opt.get("is_recommended")),
+                })
+
+    # 3. Custom options
+    custom_openrouter_num = len(all_options) + 1
+    custom_local_num = len(all_options) + 2
+    display_items.append({"type": "header", "label": "✎  Custom Endpoints"})
+    display_items.append({
+        "type": "custom_openrouter",
+        "num": custom_openrouter_num,
+        "label": "Custom OpenRouter model ID",
+        "is_current": (matched_current_idx == custom_openrouter_num),
+        "is_recommended": False,
+        "data": {
+            "name": "Custom OpenRouter Model",
+            "id": current_model_id if current_model_id else "custom/model-id",
+            "provider": "openrouter",
+            "price_str": "Varies by Model",
+            "ctx_str": "Auto-detected via API",
+            "supports1m": False,
+            "desc": "Specify any custom model ID hosted on OpenRouter (e.g. anthropic/claude-3-opus, google/gemini-2.5-pro, deepseek/deepseek-r1)."
+        }
+    })
+    display_items.append({
+        "type": "custom_local",
+        "num": custom_local_num,
+        "label": "Custom local / OpenAI-compatible endpoint",
+        "is_current": False,
+        "is_recommended": False,
+        "data": {
+            "name": "Custom Local / OpenAI Endpoint",
+            "id": "openai/custom-model",
+            "provider": "local",
+            "price_str": "$0.00 / Local",
+            "ctx_str": "Local Context",
+            "supports1m": False,
+            "desc": "Connect to any OpenAI-compatible local server:\n• Ollama (http://localhost:11434)\n• LM Studio (http://localhost:1234/v1)\n• vLLM, LocalAI, Aphrodite, or custom gateway proxies."
+        }
+    })
+
+    selectable_indices = [i for i, it in enumerate(display_items) if it["type"] != "header"]
+    if not selectable_indices:
+        return None
+
+    target_num = matched_current_idx if matched_current_idx is not None else recommended_idx
+    selected_sel_idx = 0
+    for idx_in_sel, item_idx in enumerate(selectable_indices):
+        if display_items[item_idx]["num"] == target_num:
+            selected_sel_idx = idx_in_sel
+            break
+
+    def curses_app(stdscr):
+        nonlocal selected_sel_idx
+        curses.curs_set(0)
+        curses.use_default_colors()
+        
+        try:
+            curses.init_pair(1, curses.COLOR_CYAN, -1)
+            curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_CYAN)
+            curses.init_pair(3, curses.COLOR_GREEN, -1)
+            curses.init_pair(4, curses.COLOR_YELLOW, -1)
+            curses.init_pair(5, curses.COLOR_MAGENTA, -1)
+            curses.init_pair(6, curses.COLOR_BLUE, -1)
+        except Exception:
+            pass
+
+        scroll_top = 0
+        input_num_buf = ""
+
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
+
+            if max_y < 12 or max_x < 65:
+                msg = f"Terminal size ({max_x}x{max_y}) is compact. Resize window for 2-pane TUI."
+                try:
+                    stdscr.addstr(0, 0, msg[:max_x-1])
+                except Exception:
+                    pass
+                stdscr.refresh()
+                k = stdscr.getch()
+                if k in (ord('q'), ord('Q'), 27):
+                    return None
+                continue
+
+            header_title = f" [{tier_idx}/{total_tiers}] {tier['tier_label']} "
+            try:
+                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                stdscr.addstr(0, 1, header_title[:max_x - 2])
+                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+            except Exception:
+                pass
+
+            left_w = max(34, int(max_x * 0.48))
+            right_w = max_x - left_w - 3
+            body_h = max_y - 3
+
+            curr_item_idx = selectable_indices[selected_sel_idx]
+            if curr_item_idx < scroll_top:
+                scroll_top = curr_item_idx
+            elif curr_item_idx >= scroll_top + body_h:
+                scroll_top = curr_item_idx - body_h + 1
+
+            # Render Left Pane
+            y_offset = 2
+            for row in range(body_h):
+                item_idx = scroll_top + row
+                if item_idx >= len(display_items):
+                    break
+                item = display_items[item_idx]
+                draw_y = y_offset + row
+
+                if item["type"] == "header":
+                    try:
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(draw_y, 2, item["label"][:left_w - 2])
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+                else:
+                    is_active = (item_idx == curr_item_idx)
+                    num_str = f"[{item['num']:>2}]"
+                    
+                    if item["type"] in ("custom_openrouter", "custom_local"):
+                        name_str = item["label"]
+                        price_str = ""
+                        ctx_str = ""
+                    else:
+                        d = item["data"]
+                        name_str = d["name"]
+                        price_str = d.get("price_str", "")
+                        ctx_str = f"[{d.get('ctx_str', '')}]"
+
+                    badges = []
+                    if item.get("is_recommended"):
+                        badges.append("(Rec)")
+                    if item.get("is_current"):
+                        badges.append("[CURR]")
+                    elif "$0.00" in price_str or ":free" in item["data"].get("id", ""):
+                        badges.append("[FREE]")
+                    badge_str = " ".join(badges)
+
+                    avail_name_w = max(8, left_w - len(num_str) - len(price_str) - len(ctx_str) - len(badge_str) - 8)
+                    short_name = (name_str[:avail_name_w - 1] + "…") if len(name_str) > avail_name_w else name_str
+
+                    cursor_char = "▶" if is_active else " "
+                    row_content = f"{cursor_char} {num_str} {short_name:<{avail_name_w}} {price_str:<12} {ctx_str} {badge_str}"
+                    row_content = row_content[:left_w - 1]
+
+                    try:
+                        if is_active:
+                            stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+                            stdscr.addstr(draw_y, 1, row_content.ljust(left_w - 1))
+                            stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                        else:
+                            stdscr.addstr(draw_y, 1, row_content)
+                    except Exception:
+                        pass
+
+            # Vertical divider
+            for y in range(1, max_y - 1):
+                try:
+                    stdscr.attron(curses.color_pair(6))
+                    stdscr.addstr(y, left_w + 1, "│")
+                    stdscr.attroff(curses.color_pair(6))
+                except Exception:
+                    pass
+
+            # Render Right Pane
+            cur_selected_item = display_items[curr_item_idx]
+            right_x = left_w + 3
+            
+            try:
+                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                stdscr.addstr(1, right_x, "┌─ Model Details & Capabilities " + "─" * max(0, right_w - 34) + "┐")
+                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+            except Exception:
+                pass
+
+            detail_lines = []
+            d = cur_selected_item["data"]
+            detail_lines.append(("Display Name: ", d["name"], curses.A_BOLD))
+            detail_lines.append(("Model ID:     ", d["id"], curses.color_pair(1)))
+            
+            prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
+            detail_lines.append(("Provider:     ", prov_name, 0))
+            detail_lines.append(("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD))
+            detail_lines.append(("Context Window: ", d.get("ctx_str", "N/A"), curses.color_pair(5)))
+            
+            s1m_str = "✅ Supported (Desktop 1M Mode Active)" if d.get("supports1m") else "Standard Context Window"
+            s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
+            detail_lines.append(("1M Support:   ", s1m_str, s1m_color))
+
+            status_tags = []
+            if cur_selected_item.get("is_recommended"):
+                status_tags.append("⭐ Recommended for Tier")
+            if cur_selected_item.get("is_current"):
+                status_tags.append("📌 Currently Configured")
+            if ":free" in d.get("id", "") or "$0.00" in d.get("price_str", ""):
+                status_tags.append("🎁 $0.00 Free Cloud Inference")
+            
+            if status_tags:
+                detail_lines.append(("Status:       ", " | ".join(status_tags), curses.color_pair(4) | curses.A_BOLD))
+
+            detail_lines.append(("", "", 0))
+            detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
+
+            desc_text = d.get("desc") or f"Curated model for {tier['tier_name'].upper()} tier tasks."
+            for p in desc_text.split("\n"):
+                if p.strip():
+                    wrapped = textwrap.wrap(p, width=max(15, right_w - 4))
+                    for wl in wrapped:
+                        detail_lines.append(("", wl, 0))
+                else:
+                    detail_lines.append(("", "", 0))
+
+            card_y = 2
+            max_card_rows = body_h - 1
+            for row_idx, (label, val, attr) in enumerate(detail_lines):
+                if row_idx >= max_card_rows:
+                    break
+                line_y = card_y + row_idx
+                try:
+                    stdscr.addstr(line_y, right_x, "│ ")
+                    if label:
+                        stdscr.attron(curses.A_BOLD)
+                        stdscr.addstr(line_y, right_x + 2, label)
+                        stdscr.attroff(curses.A_BOLD)
+                    if val:
+                        if attr:
+                            stdscr.attron(attr)
+                        stdscr.addstr(line_y, right_x + 2 + len(label), val[:max(0, right_w - len(label) - 4)])
+                        if attr:
+                            stdscr.attroff(attr)
+                    stdscr.addstr(line_y, right_x + right_w - 1, "│")
+                except Exception:
+                    pass
+
+            footer_y = card_y + min(len(detail_lines), max_card_rows)
+            if footer_y < max_y - 1:
+                try:
+                    stdscr.attron(curses.color_pair(1))
+                    stdscr.addstr(footer_y, right_x, "└" + "─" * max(0, right_w - 2) + "┘")
+                    stdscr.attroff(curses.color_pair(1))
+                except Exception:
+                    pass
+
+            # Footer navigation bar
+            footer_text = " [↑/↓/j/k] Preview  •  [1-N / Enter] Select  •  [q] Abort "
+            if input_num_buf:
+                footer_text += f" • Jump: {input_num_buf}_"
+            try:
+                stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+            except Exception:
+                pass
+
+            stdscr.refresh()
+
+            key = stdscr.getch()
+
+            if key in (curses.KEY_UP, ord('k'), ord('K')):
+                selected_sel_idx = (selected_sel_idx - 1) % len(selectable_indices)
+                input_num_buf = ""
+            elif key in (curses.KEY_DOWN, ord('j'), ord('J')):
+                selected_sel_idx = (selected_sel_idx + 1) % len(selectable_indices)
+                input_num_buf = ""
+            elif key in (curses.KEY_HOME, ord('g')):
+                selected_sel_idx = 0
+                input_num_buf = ""
+            elif key in (curses.KEY_END, ord('G')):
+                selected_sel_idx = len(selectable_indices) - 1
+                input_num_buf = ""
+            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord(' '), curses.KEY_RIGHT):
+                if input_num_buf:
+                    try:
+                        target_val = int(input_num_buf)
+                        for item_idx in selectable_indices:
+                            if display_items[item_idx]["num"] == target_val:
+                                return display_items[item_idx]["num"]
+                    except ValueError:
+                        pass
+                return display_items[curr_item_idx]["num"]
+            elif key in (ord('q'), ord('Q'), 27):
+                return None
+            elif ord('0') <= key <= ord('9'):
+                input_num_buf += chr(key)
+                try:
+                    target_val = int(input_num_buf)
+                    matched_s_idx = next((s_idx for s_idx, item_idx in enumerate(selectable_indices) if display_items[item_idx]["num"] == target_val), None)
+                    if matched_s_idx is not None:
+                        selected_sel_idx = matched_s_idx
+                except ValueError:
+                    input_num_buf = ""
+            elif key == curses.KEY_BACKSPACE or key in (127, 8):
+                input_num_buf = input_num_buf[:-1]
+            elif key == curses.KEY_RESIZE:
+                continue
+
+    try:
+        return curses.wrapper(curses_app)
+    except Exception:
+        return None
+
 
 def run_model_configuration():
     check_claude_closed()
@@ -689,8 +1037,6 @@ def run_model_configuration():
     selections = []
 
     for idx, t in enumerate(tiers, 1):
-        print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
-
         current_model_id = current_config.get(t["claude_name"])
         matched_current_idx = None
         recommended_idx = 1
@@ -698,73 +1044,87 @@ def run_model_configuration():
         # OpenRouter curated options + matching installed Ollama models
         all_options = list(t["options"]) + list(t.get("ollama_options", []))
 
-        # Print OpenRouter cloud section
-        openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
-        if openrouter_opts:
-            print(f"  \033[1;34m☁  OpenRouter\033[0m", file=sys.stderr)
+        # Check matched indices
         for opt_idx, opt in enumerate(all_options, 1):
-            if opt.get("provider") != "openrouter":
-                continue
-            is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
-            if is_current:
+            if current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id):
                 matched_current_idx = opt_idx
             if opt.get("is_recommended"):
                 recommended_idx = opt_idx
-            tags = []
-            if opt.get("is_recommended"):
-                tags.append("\033[1;32m(Recommended)\033[0m")
-            if is_current:
-                tags.append("\033[1;33m[CURRENT]\033[0m")
-            tag_str = f"  {' '.join(tags)}" if tags else ""
-            print(f"  {opt_idx}) {opt['name']:<26} {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
-
-        # Print Ollama curated section (only installed models)
-        ollama_opts_for_tier = [o for o in all_options if o.get("provider") == "ollama"]
-        if ollama_opts_for_tier:
-            print(f"  \033[1;36m⬡  Ollama (Local)\033[0m", file=sys.stderr)
-        for opt_idx, opt in enumerate(all_options, 1):
-            if opt.get("provider") != "ollama":
-                continue
-            is_current = (current_model_id is not None and (opt["id"] == current_model_id or opt.get("raw_model_id") == current_model_id))
-            if is_current:
-                matched_current_idx = opt_idx
-            if opt.get("is_recommended") and matched_current_idx is None:
-                recommended_idx = opt_idx
-            tags = []
-            if opt.get("is_recommended"):
-                tags.append("\033[1;32m(Recommended)\033[0m")
-            if is_current:
-                tags.append("\033[1;33m[CURRENT]\033[0m")
-            tag_str = f"  {' '.join(tags)}" if tags else ""
-            print(f"  {opt_idx}) {opt['raw_model_id']:<26} $0.00 / Local   [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
         custom_openrouter_num = len(all_options) + 1
         custom_local_num = len(all_options) + 2
-        custom_tag = ""
-        if matched_current_idx is None and current_model_id:
-            custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
-            matched_current_idx = custom_openrouter_num
 
-        print(f"  \033[1;33m✎  Custom\033[0m", file=sys.stderr)
-        print(f"  {custom_openrouter_num}) Custom OpenRouter model ID{custom_tag}", file=sys.stderr)
-        print(f"  {custom_local_num}) Custom local / OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
+        # 1. Attempt interactive 2-pane TUI selector
+        tui_choice = tui_select_model(t, idx, len(tiers), all_options, matched_current_idx, recommended_idx, current_model_id)
 
-        if matched_current_idx is not None:
-            default_choice = str(matched_current_idx)
-            if matched_current_idx == custom_openrouter_num:
-                default_hint = f"default={default_choice} (Current: {current_model_id})"
-            else:
-                default_hint = f"default={default_choice} (Current)"
+        if tui_choice is not None:
+            choice_num = tui_choice
+            print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
+            if choice_num <= len(all_options):
+                chosen_preview = all_options[choice_num - 1]
+                print(f"  \033[1;32m✓ Selected:\033[0m {chosen_preview['name']} ({chosen_preview['price_str']}) [{chosen_preview['ctx_str']}]\n", file=sys.stderr)
         else:
-            default_choice = str(recommended_idx)
-            default_hint = f"default={default_choice} (Recommended)"
+            # 2. Fallback to clean linear CLI menu if not in an interactive curses TTY
+            print(f"\033[1;35m--- [{idx}/5] {t['tier_label']} ---\033[0m", file=sys.stderr)
 
-        user_choice = safe_input(f"Select {t['tier_name'].upper()} model [1-{custom_local_num}, {default_hint}]: ", default_choice)
+            # Print OpenRouter cloud section
+            openrouter_opts = [o for o in all_options if o.get("provider") == "openrouter"]
+            if openrouter_opts:
+                print(f"  \033[1;34m☁  OpenRouter\033[0m", file=sys.stderr)
+            for opt_idx, opt in enumerate(all_options, 1):
+                if opt.get("provider") != "openrouter":
+                    continue
+                is_current = (opt_idx == matched_current_idx)
+                tags = []
+                if opt.get("is_recommended"):
+                    tags.append("\033[1;32m(Recommended)\033[0m")
+                if is_current:
+                    tags.append("\033[1;33m[CURRENT]\033[0m")
+                tag_str = f"  {' '.join(tags)}" if tags else ""
+                print(f"  {opt_idx}) {opt['name']:<26} {opt['price_str']:<14} [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
 
-        try:
-            choice_num = int(user_choice)
-        except ValueError:
-            choice_num = int(default_choice)
+            # Print Ollama curated section (only installed models)
+            ollama_opts_for_tier = [o for o in all_options if o.get("provider") == "ollama"]
+            if ollama_opts_for_tier:
+                print(f"  \033[1;36m⬡  Ollama (Local)\033[0m", file=sys.stderr)
+            for opt_idx, opt in enumerate(all_options, 1):
+                if opt.get("provider") != "ollama":
+                    continue
+                is_current = (opt_idx == matched_current_idx)
+                tags = []
+                if opt.get("is_recommended"):
+                    tags.append("\033[1;32m(Recommended)\033[0m")
+                if is_current:
+                    tags.append("\033[1;33m[CURRENT]\033[0m")
+                tag_str = f"  {' '.join(tags)}" if tags else ""
+                print(f"  {opt_idx}) {opt['raw_model_id']:<26} $0.00 / Local   [{opt['ctx_str']}]{tag_str}", file=sys.stderr)
+
+            custom_tag = ""
+            if matched_current_idx is None and current_model_id:
+                custom_tag = f" \033[1;33m[CURRENT: {current_model_id}]\033[0m"
+                matched_current_idx = custom_openrouter_num
+
+            print(f"  \033[1;33m✎  Custom\033[0m", file=sys.stderr)
+            print(f"  {custom_openrouter_num}) Custom OpenRouter model ID{custom_tag}", file=sys.stderr)
+            print(f"  {custom_local_num}) Custom local / OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, custom URL)", file=sys.stderr)
+
+            if matched_current_idx is not None:
+                default_choice = str(matched_current_idx)
+                if matched_current_idx == custom_openrouter_num:
+                    default_hint = f"default={default_choice} (Current: {current_model_id})"
+                else:
+                    default_hint = f"default={default_choice} (Current)"
+            else:
+                default_choice = str(recommended_idx)
+                default_hint = f"default={default_choice} (Recommended)"
+
+            user_choice = safe_input(f"Select {t['tier_name'].upper()} model [1-{custom_local_num}, {default_hint}]: ", default_choice)
+
+            try:
+                choice_num = int(user_choice)
+            except ValueError:
+                choice_num = int(default_choice)
+
 
         if 1 <= choice_num <= len(all_options):
             chosen = all_options[choice_num - 1]
