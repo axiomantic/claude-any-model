@@ -3,7 +3,7 @@
 Semantic Model Recommender & Comparative Delta Evaluator (LLM + Web Search Grounding)
 Queries OpenRouter models with online web search grounding to analyze the latest
 state of AI models, benchmark rankings, and pricing compared to Anthropic tiers,
-and performs a comprehensive BEFORE vs AFTER delta diff against the active claude-any-model script.
+and performs a comprehensive BEFORE vs AFTER delta diff against the active claude-threepio script.
 """
 
 import os
@@ -26,7 +26,7 @@ def get_api_key():
     if key:
         return key.strip()
     
-    env_path = os.path.expanduser("~/.claude-any-model/.env")
+    env_path = os.path.expanduser("~/.claude-threepio/.env")
     if os.path.exists(env_path):
         try:
             with open(env_path, "r", encoding="utf-8") as f:
@@ -37,7 +37,7 @@ def get_api_key():
             pass
     return None
 
-def extract_current_tiers(setup_path="claude-any-model"):
+def extract_current_tiers(setup_path="claude-threepio"):
     if not os.path.exists(setup_path):
         return []
     with open(setup_path, "r", encoding="utf-8") as f:
@@ -149,10 +149,10 @@ def perform_llm_comparative_analysis(api_key, current_tiers, catalog_map, compac
     system_prompt = f"""You are a principal AI infrastructure architect performing an in-depth weekly review and comparative delta evaluation of AI inference models as of {today_str}.
 
 You are provided with:
-1. THE CURRENTLY ACTIVE TIER CONFIGURATION from claude-any-model (what users currently see and use).
+1. THE CURRENTLY ACTIVE TIER CONFIGURATION from claude-threepio (what users currently see and use).
 2. THE LIVE OPENROUTER MODEL CATALOG (with current token pricing and context lengths).
 
-Your mission is NOT just to list models, but to conduct an actionable, comparative engineering audit comparing what is CURRENTLY configured in claude-any-model against the newest state of the art available on OpenRouter.
+Your mission is NOT just to list models, but to conduct an actionable, comparative engineering audit comparing what is CURRENTLY configured in claude-threepio against the newest state of the art available on OpenRouter.
 
 Anthropic Target Aliases:
 - Opus Tier (claude-opus-4): Heavyweight reasoning, math, complex system architecture. Reference: Claude 3.7 / 4 Opus ($15/$75).
@@ -169,7 +169,7 @@ Instructions:
    - Value Workhorse (Default/Recommended): Optimal benchmark score per dollar.
    - High-Throughput / Specialist: Fast, reliable tool calling, SWE-bench coding leader.
    - Frontier Ceiling Option: Highest capability ceiling for users prioritizing maximum reasoning.
-3. For EACH tier, compare the CURRENT lineup in claude-any-model vs your PROPOSED updated lineup:
+3. For EACH tier, compare the CURRENT lineup in claude-threepio vs your PROPOSED updated lineup:
    - Identify which models are RETAINED, which models are REPLACED/SWAPPED OUT, and which new models are ADDED.
    - For every swap/change, provide the specific price delta ($In/$Out difference and % change) and benchmark/architectural justification.
    - Designate 1 model per tier as 'is_recommended': true. If the recommended model is different from the current one, explain why.
@@ -245,8 +245,8 @@ Please perform web search on recent benchmarks and releases, conduct the compara
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/axiomantic/claude-any-model",
-                "X-Title": "Claude Any Model Comparative Evaluator"
+                "HTTP-Referer": "https://github.com/axiomantic/claude-threepio",
+                "X-Title": "claude-threepio Comparative Evaluator"
             }
         )
 
@@ -304,7 +304,7 @@ def generate_comparative_markdown_report(analysis_result, current_tiers, catalog
         delta_analysis = tc.get("delta_analysis", "")
 
         lines.append(f"### 🏷️ {tlabel} (`{cname}`)")
-        lines.append(f"- **Current Recommended (in `claude-any-model`):** `{curr_rec}`")
+        lines.append(f"- **Current Recommended (in `claude-threepio`):** `{curr_rec}`")
         lines.append(f"- **Proposed Recommended:** **`{prop_rec}`**")
         if rec_sum:
             lines.append(f"- **Recommendation Shift Rationale:** {rec_sum}\n")
@@ -352,11 +352,11 @@ def generate_comparative_markdown_report(analysis_result, current_tiers, catalog
     lines.append("## 💡 Maintainer Action Items")
     lines.append("- [ ] Review proposed model replacements and pricing deltas above.")
     lines.append("- [ ] Verify context window requirements (1M context preserved for agentic flows).")
-    lines.append("- [ ] Merge this PR to update the default curated recommendations in `claude-any-model`.")
+    lines.append("- [ ] Merge this PR to update the default curated recommendations in `claude-threepio`.")
 
     return "\n".join(lines)
 
-def apply_comparative_recommendations(analysis_result, catalog_map, today_str, setup_path="claude-any-model"):
+def apply_comparative_recommendations(analysis_result, catalog_map, today_str, setup_path="claude-threepio"):
     if not os.path.exists(setup_path):
         warn(f"{setup_path} not found.")
         return
@@ -444,8 +444,8 @@ def main():
         warn("No OPENROUTER_API_KEY found. Live LLM comparative analysis requires an API key.")
         sys.exit(1)
 
-    current_tiers = extract_current_tiers("claude-any-model")
-    info(f"Extracted {len(current_tiers)} active tiers from claude-any-model for comparative baseline.")
+    current_tiers = extract_current_tiers("claude-threepio")
+    info(f"Extracted {len(current_tiers)} active tiers from claude-threepio for comparative baseline.")
 
     catalog = fetch_openrouter_catalog()
     if not catalog:
@@ -465,7 +465,7 @@ def main():
     success(f"Wrote comprehensive comparative evaluation report to {report_file}")
 
     if apply_mode:
-        apply_comparative_recommendations(analysis_result, catalog_map, today_str, "claude-any-model")
+        apply_comparative_recommendations(analysis_result, catalog_map, today_str, "claude-threepio")
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.14.0 (2026-08-21)
+
+### Changed
+
+* Project renamed from `claude-any-model` to `claude-threepio`. CLI script, app directory (`~/.claude-threepio`), daemon service names, User-Agent strings, and all documentation updated. Like C-3PO, this tool translates between protocols — Anthropic Messages API to OpenRouter/OpenAI API — and it runs in 3P mode.
+
 ## 1.13.0 (2026-08-21)
 
 ### Added
@@ -12,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-* `./claude-any-model sync-sessions` command: two-way merge of session metadata and sidebar groupings between 1P (Regular) and 3P (Gateway) modes. Shows a stats preview and prompts before making changes. Runs automatically as a prompted step during `./claude-any-model switch`. Merges by `sessionId` (newer `lastActivityAt` wins on conflict), unions group assignments and starred sessions. Conversation transcripts are already shared via `~/.claude/projects/` and need no sync.
+* `./claude-threepio sync-sessions` command: two-way merge of session metadata and sidebar groupings between 1P (Regular) and 3P (Gateway) modes. Shows a stats preview and prompts before making changes. Runs automatically as a prompted step during `./claude-threepio switch`. Merges by `sessionId` (newer `lastActivityAt` wins on conflict), unions group assignments and starred sessions. Conversation transcripts are already shared via `~/.claude/projects/` and need no sync.
 
 ## 1.11.0 (2026-08-21)
 

@@ -1,10 +1,10 @@
-# Claude Any Model
+# claude-threepio
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://claude.ai)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-purple.svg)](https://openrouter.ai)
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-3P%20Inference-orange.svg)](https://claude.ai)
-[![Release](https://img.shields.io/github/v/release/axiomantic/claude-any-model?include_prereleases&color=green)](https://github.com/axiomantic/claude-any-model/releases)
+[![Release](https://img.shields.io/github/v/release/axiomantic/claude-threepio?include_prereleases&color=green)](https://github.com/axiomantic/claude-threepio/releases)
 
 Keep coding in Claude Desktop and Claude Code after you hit your weekly Claude credit limit — without the prohibitive overage costs.
 
@@ -30,7 +30,7 @@ A typical day of coding that would cost $50-200+ in Claude overage costs $2-5 on
 
 Claude Desktop has two modes: **First-Party Mode (1P)** — your normal subscription, Anthropic models, Anthropic billing — and **Third-Party Mode (3P)**, intended for enterprise deployments (AWS Bedrock, Vertex AI, etc.). Out of the box, 3P only supports Anthropic models — you pick *where* they're hosted, not *which* models.
 
-`claude-any-model` uses 3P as the entry point and swaps in any model:
+`claude-threepio` uses 3P as the entry point and swaps in any model:
 
 1. **Claude Desktop or CLI** sends requests to a lightweight local gateway (`http://127.0.0.1:3010`).
 2. **Local Proxy (LiteLLM)** translates Anthropic Messages API calls and forwards them to your selected models on OpenRouter.
@@ -45,16 +45,16 @@ On macOS, 3P runs from `~/Library/Application Support/Claude-3p/`. On Linux, `~/
 Run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/claude-any-model | bash
+curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-threepio/main/claude-threepio | bash
 ```
 
-*(Or clone the repository and run `./claude-any-model install`)*
+*(Or clone the repository and run `./claude-threepio install`)*
 
 ---
 
 ## Model Tiers
 
-Each Claude tier maps to a set of OpenRouter models. The recommended pick is marked with **bold**. Run `./claude-any-model models` to choose from these or set your own custom model.
+Each Claude tier maps to a set of OpenRouter models. The recommended pick is marked with **bold**. Run `./claude-threepio models` to choose from these or set your own custom model.
 
 | Tier | Best For | Model | Price (per 1M in/out) | Context |
 |------|----------|-------|-----------------------|---------|
@@ -91,7 +91,7 @@ Local inference (Ollama, LM Studio, vLLM) is auto-discovered and offered as a fr
 When your weekly Claude credits reset, switch back to your subscription:
 
 ```bash
-./claude-any-model switch regular
+./claude-threepio switch regular
 ```
 
 Your sessions, sidebar, and project groupings are synced automatically during the switch so nothing is lost.
@@ -99,12 +99,12 @@ Your sessions, sidebar, and project groupings are synced automatically during th
 And when your usage runs out again, switch back to 3P:
 
 ```bash
-./claude-any-model switch gateway
+./claude-threepio switch gateway
 ```
 
 Check the active mode and proxy health at any time:
 ```bash
-./claude-any-model status
+./claude-threepio status
 ```
 
 ---
@@ -112,14 +112,14 @@ Check the active mode and proxy health at any time:
 ## CLI Commands
 
 ```bash
-./claude-any-model install            # Full setup: venv, API key, model picker, daemon
-./claude-any-model launch             # Launch Claude CLI routed through the local proxy
-./claude-any-model models             # Reconfigure tier models (live OpenRouter prices)
-./claude-any-model switch [mode]      # Switch between 1P (regular) and 3P (proxy) mode
-./claude-any-model sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P
-./claude-any-model status             # Check active mode, daemon health, and 3P profile
-./claude-any-model restart            # Restart local gateway daemon
-./claude-any-model uninstall          # Stop and remove background service
+./claude-threepio install            # Full setup: venv, API key, model picker, daemon
+./claude-threepio launch             # Launch Claude CLI routed through the local proxy
+./claude-threepio models             # Reconfigure tier models (live OpenRouter prices)
+./claude-threepio switch [mode]      # Switch between 1P (regular) and 3P (proxy) mode
+./claude-threepio sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P
+./claude-threepio status             # Check active mode, daemon health, and 3P profile
+./claude-threepio restart            # Restart local gateway daemon
+./claude-threepio uninstall          # Stop and remove background service
 ```
 
 ---
@@ -129,7 +129,7 @@ Check the active mode and proxy health at any time:
 ### Recommended: use the built-in launcher
 
 ```bash
-./claude-any-model launch
+./claude-threepio launch
 ```
 
 This sets the correct env vars and `exec`s into `claude` — no need to remember export commands.
