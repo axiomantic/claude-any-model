@@ -505,9 +505,49 @@ def fetch_openrouter_catalog():
         warn(f"Could not reach OpenRouter API ({e}). Using built-in pricing estimates.")
     return catalog
 
+CURATED_DESCRIPTIONS = {
+    "deepseek/deepseek-v4-pro": "DeepSeek's flagship frontier reasoning and coding architecture. Excels at complex system design, deep mathematical reasoning, multi-step agentic problem-solving, and large refactors with full 1M context support.",
+    "nvidia/nemotron-3-ultra-550b-a55b:free": "NVIDIA's massive 550B ultra-scale MoE model from the OpenRouter Free Collection. Optimized for enterprise reasoning, high-throughput agent planning, and complex instruction following with 1M context at $0.00 cost.",
+    "stealth/ox-alpha": "Next-generation stealth reasoning model available for free on OpenRouter. Features advanced multi-step chain-of-thought, strong code generation, and 1M context window.",
+    "z-ai/glm-5.2:free": "Zhipu AI's bilingual frontier reasoning model from the Free Collection. Strong mathematical logic, coding comprehension, long-context retrieval, and multi-turn conversational agents with 256k context.",
+    "z-ai/glm-5.2": "Zhipu AI's bilingual frontier reasoning model. Features strong mathematical reasoning, coding comprehension, long-context retrieval, and multi-turn conversational agents with full 1M context window.",
+    "qwen/qwen3.7-plus": "Alibaba Cloud's heavyweight hybrid reasoning model with 1M context window. Superior benchmark performance across coding, math, agent tool calling, and long-context synthesis.",
+    "deepseek/deepseek-v3.2": "DeepSeek's efficient MoE model delivering strong performance on everyday software engineering and multi-turn workflows at ultra-low latency.",
+    "google/gemini-3.7-flash": "Google's flagship hybrid reasoning model featuring dynamic thought budgeting, 1M context window, fast execution speed, and multimodal capabilities.",
+    "moonshotai/kimi-k2.5": "Moonshot AI's high-speed long-context reasoning model, optimized for complex document synthesis, multi-hop reasoning, and deep codebase analysis.",
+    "moonshotai/kimi-k3": "Moonshot AI's next-generation frontier reasoning architecture with 1M context. Unmatched performance on complex system design, deep mathematical proofs, and multi-agent workflows.",
+    "deepseek/deepseek-r1-0528": "DeepSeek's pure reinforcement-learning reasoning model. Specialized for deep mathematical derivations, complex logic puzzles, and difficult algorithm development.",
+    "openai/gpt-5.6-terra": "OpenAI's frontier architecture featuring high-capacity reasoning, advanced tool use, agent workflow orchestration, and 1M context window.",
+    "anthropic/claude-sonnet-4.6": "Anthropic's frontier Sonnet-class model with state-of-the-art performance across coding, agents, and complex professional workflows. Excels at iterative software development, large codebase navigation, and end-to-end task completion.",
+    "anthropic/claude-sonnet-4": "Anthropic's Sonnet 4 model, delivering strong precision on SWE-bench verified coding tasks, robust instruction following, and agent workflows.",
+    "anthropic/claude-opus-5": "Anthropic's ultimate frontier architecture designed for the hardest cognitive tasks, massive architectural design, scientific synthesis, and complex multi-agent systems.",
+    "deepseek/deepseek-v4-flash": "DeepSeek's ultra-fast, budget-friendly workhorse model with native 1M context support. Optimized for rapid coding, linting, code transformation, and high-frequency queries at $0.08/$0.15 per 1M tokens.",
+    "cohere/north-mini-code:free": "Cohere's specialized code-generation model from the OpenRouter Free Collection. Optimized for repository search, syntactic completion, refactoring, and code explanation with 256k context.",
+    "poolside/laguna-s-2.1:free": "Poolside's dedicated software intelligence model from the OpenRouter Free Collection. Specialized for developer tooling, test generation, and pull request reviews with 262k context.",
+    "google/gemma-4-31b-it:free": "Google's open-weights 31B instruction-tuned model from the Free Collection. Strong zero-shot performance, code understanding, and 262k context window.",
+    "qwen/qwen3.7-flash": "Alibaba Cloud's ultra-budget workhorse at $0.03/$0.13 per 1M tokens. Features 1M context window, lightning-fast response times, and strong coding abilities.",
+    "google/gemini-2.0-flash-001": "Google's high-speed multimodal production model with 1M context window, real-time response speeds, and robust tool execution.",
+    "qwen/qwen3-coder-next": "Next-generation code reasoning model from Alibaba Cloud. Strong performance across automated refactoring, unit test generation, and architectural design.",
+    "qwen/qwen3-coder-30b-a3b-instruct": "Alibaba Cloud's efficient 30B coding model. Specialized for multi-file bug fixing, code conversion, and full-stack software development at $0.07/$0.28 per 1M tokens.",
+    "qwen/qwen3-coder-flash": "Qwen's fast 1M context coding specialist, delivering high-speed code generation and large repository search.",
+    "mistralai/codestral-2508": "Mistral AI's dedicated code generation model with 256k context, fluent multi-language support, and fill-in-the-middle capabilities.",
+    "mistralai/ministral-8b-2512": "Mistral AI's lightweight edge and server model. Low latency, precise instruction adherence, and highly cost-effective.",
+    "mistralai/mistral-nemo": "Mistral AI and NVIDIA collaborative 12B model with 128k context, strong multilingual support, and high efficiency.",
+    "nvidia/nemotron-3.5-lightning:free": "NVIDIA's ultra-fast lightning model from the Free Collection, offering near-instant latency and 1M context window for rapid querying.",
+    "nvidia/nemotron-3-nano-30b-a3b:free": "NVIDIA's 30B efficient nano model from the Free Collection, optimized for fast lightweight reasoning with 256k context.",
+    "thinkingmachines/inkling-small:free": "Thinking Machines' ultra-compact reasoning model from the Free Collection, designed for quick classification and lightweight tool calling.",
+    "inclusionai/ling-3.0-flash": "Inclusion AI's ultra-low latency model at $0.02/$0.06 per 1M tokens, optimized for rapid text operations and structured parsing.",
+    "openai/gpt-oss-120b": "OpenAI's open-weights 120B model offering frontier performance on general tasks at ultra-low inference pricing.",
+    "amazon/nova-micro-v1": "Amazon's ultra-fast micro text model with 128k context, built for high-throughput, low-latency processing.",
+    "meta-llama/llama-3.1-8b-instruct": "Meta's lightweight instruction-tuned 8B model with 131k context window for efficient multi-turn tasks.",
+    "openai/gpt-5.6-luna": "OpenAI's fast, responsive 1M context reasoning model optimized for day-to-day coding and conversational tasks.",
+}
+
 def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_ctx, fallback_1m, is_recommended=False):
     item = catalog.get(model_id)
+    curated_desc = CURATED_DESCRIPTIONS.get(model_id)
     if item:
+        desc = curated_desc or item.get("desc", "").rstrip(".… ")
         return {
             "id": model_id,
             "raw_model_id": model_id,
@@ -518,7 +558,7 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
             "provider": "openrouter",
             "api_base": None,
             "is_recommended": is_recommended,
-            "desc": item.get("desc", ""),
+            "desc": desc,
         }
     return {
         "id": model_id,
@@ -530,7 +570,7 @@ def get_model_entry(catalog, model_id, fallback_name, fallback_price, fallback_c
         "provider": "openrouter",
         "api_base": None,
         "is_recommended": is_recommended,
-        "desc": "",
+        "desc": curated_desc or "",
     }
 
 def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_idx, recommended_idx, current_model_id):
