@@ -1748,6 +1748,7 @@ def main():
         install_service()
         configure_sandbox_network()
         status_service()
+        sync_sessions()
         post_setup_prompt()
     elif cmd == "models":
         ensure_dirs()
