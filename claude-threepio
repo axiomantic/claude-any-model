@@ -914,9 +914,9 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 pass
 
             if show_preview and max_x >= 70:
-                left_w = min(84, max(68, int(max_x * 0.52)))
-                if max_x < 90:
-                    left_w = max(42, max_x - 24)
+                left_w = min(92, max(74, int(max_x * 0.54)))
+                if max_x < 100:
+                    left_w = max(46, max_x - 26)
                 divider_x = left_w + 1
                 right_x = divider_x + 2
                 right_w = max(20, max_x - right_x - 1)
@@ -974,17 +974,17 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
 
                     badges = []
                     if item.get("is_recommended"):
-                        badges.append("(Rec)")
+                        badges.append("(Recommended)")
                     if item.get("is_current"):
-                        badges.append("[CURR]")
+                        badges.append("[CURRENT]")
                     elif "$0.00" in price_str or ":free" in item["data"].get("id", ""):
                         badges.append("[FREE]")
                     badge_str = " ".join(badges)
 
                     # Fixed column widths for crisp vertical table alignment
                     col_name_w = 28
-                    if left_w < 74:
-                        col_name_w = max(16, left_w - 7 - 13 - 8 - 14)
+                    if left_w < 82:
+                        col_name_w = max(16, left_w - 7 - 13 - 8 - len(badge_str) - 2)
 
                     short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
                     price_part = f"{price_str:<13}" if price_str else (" " * 13)
