@@ -15,7 +15,7 @@ Keep coding in Claude Desktop and Claude Code after you hit your weekly Claude c
 You're on a Claude Max plan. You hit your weekly credit limit. The work isn't done. Your options:
 
 1. **Pay Claude overage rates** — $15-25 per million output tokens. A full day of coding can cost hundreds of dollars.
-2. **Switch to a different coding harness** (OpenCode, Cursor, Pi) — but your Claude subscription doesn't work there, and handing off sessions between tools is a context-loss dance you shouldn't have to do.
+2. **Switch to a different coding harness** (OpenCode, Cursor, Pi) with less expensive open-weight models — but you lose your active session context, project state, and sidebar when you jump tools.
 3. **Stop working.**
 
 None of these are good. This project exists for option four:
