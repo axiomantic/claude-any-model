@@ -277,10 +277,14 @@ def validate_openrouter_key(api_key):
         return False, f"Connection error: {e}"
     return False, "Validation failed"
 
-def find_existing_api_key():
+def find_existing_api_keys():
+    """Search for both active and commented/inactive OpenRouter API keys across configs."""
+    active_key = None
+    commented_key = None
+
     env_key = os.environ.get("OPENROUTER_API_KEY")
     if env_key and len(env_key.strip()) > 5:
-        return env_key.strip()
+        active_key = env_key.strip()
 
     search_files = [
         os.path.join(APP_DIR, ".env"),
@@ -301,17 +305,26 @@ def find_existing_api_key():
             try:
                 with open(sf, "r", encoding="utf-8") as f:
                     for line in f:
-                        if line.strip().startswith("OPENROUTER_API_KEY="):
-                            val = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
-                            if val and len(val) > 5 and not val.startswith("your_"):
-                                return val
-                        elif "export OPENROUTER_API_KEY=" in line:
-                            val = line.strip().split("export OPENROUTER_API_KEY=", 1)[1].strip().strip('"').strip("'")
-                            if val and len(val) > 5 and not val.startswith("your_"):
-                                return val
+                        clean_line = line.strip()
+                        if clean_line.startswith("OPENROUTER_API_KEY="):
+                            val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
+                            if val and len(val) > 5 and not val.startswith("your_") and not active_key:
+                                active_key = val
+                        elif clean_line.startswith("#") and "OPENROUTER_API_KEY=" in clean_line:
+                            val = clean_line.split("OPENROUTER_API_KEY=", 1)[1].strip().strip('"').strip("'")
+                            if val and len(val) > 5 and not val.startswith("your_") and not commented_key:
+                                commented_key = val
+                        elif "export OPENROUTER_API_KEY=" in clean_line and not clean_line.startswith("#"):
+                            val = clean_line.split("export OPENROUTER_API_KEY=", 1)[1].strip().strip('"').strip("'")
+                            if val and len(val) > 5 and not val.startswith("your_") and not active_key:
+                                active_key = val
             except Exception:
                 pass
-    return None
+    return active_key, commented_key
+
+def find_existing_api_key():
+    active, commented = find_existing_api_keys()
+    return active or commented
 
 def mask_key(key):
     if not key or len(key) <= 12:
@@ -320,7 +333,8 @@ def mask_key(key):
 
 def setup_env(force=False):
     env_path = os.path.join(APP_DIR, ".env")
-    existing_key = find_existing_api_key()
+    active_key, commented_key = find_existing_api_keys()
+    existing_key = active_key or commented_key
 
     # If key is already available and not forcing, silently ensure .env exists and return
     if existing_key and not force:
@@ -864,10 +878,12 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
     import curses
     import textwrap
 
-    existing_api_key = find_existing_api_key() or ""
+    active_key, commented_key = find_existing_api_keys()
+    existing_api_key = active_key or commented_key or ""
     wizard_state = {
-        "api_key": existing_api_key,
-        "api_key_mode": "existing" if existing_api_key else "free_only",
+        "api_key": active_key or "",
+        "commented_key": commented_key or "",
+        "api_key_mode": "active" if active_key else ("restore" if commented_key else "new"),
         "tier_selections": {},
         "allow_egress": True,
         "sync_sessions": True,
@@ -1063,11 +1079,16 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
             # ─── STEP 0: API KEY SETUP ───────────────────────────────────────
             if active_step == 0:
                 key_options = []
-                if existing_api_key:
-                    masked = mask_key(existing_api_key)
-                    key_options.append(("existing", f"Use existing OpenRouter API Key ({masked})", f"Active key found in environment / ~/.claude-threepio/.env ({masked}). Enables all OpenRouter cloud models."))
-                    key_options.append(("new", "Enter a new OpenRouter API Key", "Provide a different OpenRouter API key (sk-or-v1-...)."))
-                    key_options.append(("free_only", "Free Models & Local Engines Only ($0.00)", "Run without an API key. Uses OpenRouter $0.00 Free Collection and local Ollama engines."))
+                if active_key:
+                    masked = mask_key(active_key)
+                    key_options.append(("active", f"Use Active OpenRouter API Key ({masked})", f"Active key found in environment / ~/.claude-threepio/.env ({masked}). Enables all OpenRouter cloud models."))
+                    key_options.append(("new", "Enter a New OpenRouter API Key", "Provide a different OpenRouter API key (sk-or-v1-...)."))
+                    key_options.append(("free_only", "Free Mode & Local Engines Only (Comment out key in .env)", "Comment out the API key in ~/.claude-threepio/.env so it stays saved. Runs OpenRouter Free Collection and local Ollama engines."))
+                elif commented_key:
+                    masked = mask_key(commented_key)
+                    key_options.append(("restore", f"Restore & Use Saved API Key ({masked})", f"Found previously saved/commented key in ~/.claude-threepio/.env ({masked}). Uncomment and activate."))
+                    key_options.append(("new", "Enter a New OpenRouter API Key", "Provide a new OpenRouter API key (sk-or-v1-...)."))
+                    key_options.append(("free_only", "Keep Free Mode & Local Engines Only (Key Inactive)", "Keep key commented out in ~/.claude-threepio/.env. Uses OpenRouter Free Collection and local Ollama engines."))
                 else:
                     key_options.append(("new", "Enter OpenRouter API Key (sk-or-v1-...)", "Enables all paid and free OpenRouter frontier models."))
                     key_options.append(("free_only", "Free Models & Local Engines Only ($0.00)", "No API key needed. Uses OpenRouter $0.00 Free Collection and local Ollama engines."))
@@ -1126,6 +1147,8 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                         "",
                         "── Security & Privacy ──────────────────",
                         "• Key Storage: Encrypted in ~/.claude-threepio/.env (mode 0600).",
+                        "• Key Persistence: Free mode safely comments out your key",
+                        "  (# OPENROUTER_API_KEY=...) so it can be restored anytime.",
                         "• Direct Inference: Sent only to OpenRouter SSL API endpoints.",
                         "• Zero Cloud Logging: Prompt caching & private routing enabled.",
                         "",
@@ -1157,19 +1180,29 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                     selected_idx = (selected_idx + 1) % len(key_options)
                 elif k == ord(' '):
                     wizard_state["api_key_mode"] = key_options[selected_idx][0]
-                    if wizard_state["api_key_mode"] == "existing":
-                        wizard_state["api_key"] = existing_api_key
+                    if wizard_state["api_key_mode"] == "active":
+                        wizard_state["api_key"] = active_key
+                    elif wizard_state["api_key_mode"] == "restore":
+                        wizard_state["api_key"] = commented_key
+                        wizard_state["api_key_mode"] = "active"
                     elif wizard_state["api_key_mode"] == "free_only":
                         wizard_state["api_key"] = ""
+                        wizard_state["commented_key"] = active_key or commented_key or ""
                 elif k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
                     chosen_mode = key_options[selected_idx][0]
                     wizard_state["api_key_mode"] = chosen_mode
-                    if chosen_mode == "existing":
-                        wizard_state["api_key"] = existing_api_key
+                    if chosen_mode == "active":
+                        wizard_state["api_key"] = active_key
+                        active_step += 1
+                        selected_idx = 0
+                    elif chosen_mode == "restore":
+                        wizard_state["api_key"] = commented_key
+                        wizard_state["api_key_mode"] = "active"
                         active_step += 1
                         selected_idx = 0
                     elif chosen_mode == "free_only":
                         wizard_state["api_key"] = ""
+                        wizard_state["commented_key"] = active_key or commented_key or ""
                         active_step += 1
                         selected_idx = 0
                     elif chosen_mode == "new":
@@ -1188,9 +1221,12 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                         if new_key_raw:
                             wizard_state["api_key"] = new_key_raw
                             wizard_state["api_key_mode"] = "new"
-                        elif existing_api_key:
-                            wizard_state["api_key"] = existing_api_key
-                            wizard_state["api_key_mode"] = "existing"
+                        elif active_key:
+                            wizard_state["api_key"] = active_key
+                            wizard_state["api_key_mode"] = "active"
+                        elif commented_key:
+                            wizard_state["api_key"] = commented_key
+                            wizard_state["api_key_mode"] = "active"
                         active_step += 1
                         selected_idx = 0
                 elif k in (ord('q'), ord('Q')):
@@ -1677,7 +1713,12 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                     pass
 
                 review_lines = []
-                key_display = mask_key(wizard_state["api_key"]) if wizard_state["api_key"] else "Free / Local Inference Only ($0.00)"
+                if wizard_state.get("api_key"):
+                    key_display = mask_key(wizard_state["api_key"])
+                elif wizard_state.get("commented_key"):
+                    key_display = f"Free Mode (Saved Key: {mask_key(wizard_state['commented_key'])})"
+                else:
+                    key_display = "Free / Local Inference Only ($0.00)"
                 review_lines.append((f"[1] OpenRouter API Key:  {key_display}", curses.color_pair(4) | curses.A_BOLD))
                 review_lines.append(("", 0))
 
@@ -1969,13 +2010,16 @@ def run_model_configuration(initial_step=0):
     # 1. Save Environment & API Key
     env_path = os.path.join(APP_DIR, ".env")
     api_key_to_save = wizard_result.get("api_key", "")
+    commented_key_to_save = wizard_result.get("commented_key", "")
     api_key_mode = wizard_result.get("api_key_mode", "")
 
     # Protect existing key if not explicitly switched to free_only
     if not api_key_to_save and api_key_mode != "free_only":
-        found_k = find_existing_api_key()
-        if found_k:
-            api_key_to_save = found_k
+        found_act, found_comm = find_existing_api_keys()
+        if found_act:
+            api_key_to_save = found_act
+        elif found_comm:
+            commented_key_to_save = found_comm
 
     os.makedirs(APP_DIR, exist_ok=True)
     if os.path.exists(env_path):
@@ -1985,13 +2029,28 @@ def run_model_configuration(initial_step=0):
         except Exception:
             pass
 
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.write(f"OPENROUTER_API_KEY={api_key_to_save}\nPORT={PORT}\n")
-    os.chmod(env_path, 0o600)
-    if api_key_to_save:
+    env_lines = []
+    if api_key_mode == "free_only":
+        saved_ref = commented_key_to_save or api_key_to_save
+        if saved_ref:
+            env_lines.append(f"# OPENROUTER_API_KEY={saved_ref}")
+        env_lines.append("OPENROUTER_API_KEY=")
+        env_lines.append(f"PORT={PORT}")
+        info(f"Free mode configured (API key safely commented out in {env_path}).")
+    elif api_key_to_save:
+        env_lines.append(f"OPENROUTER_API_KEY={api_key_to_save}")
+        env_lines.append(f"PORT={PORT}")
         success(f"OpenRouter API credentials saved to {env_path}")
     else:
+        if commented_key_to_save:
+            env_lines.append(f"# OPENROUTER_API_KEY={commented_key_to_save}")
+        env_lines.append("OPENROUTER_API_KEY=")
+        env_lines.append(f"PORT={PORT}")
         info("Saved proxy configuration without API key (Free & Local models enabled).")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(env_lines) + "\n")
+    os.chmod(env_path, 0o600)
 
     # 2. Generate all slot routes & alias mapping
     slot_mappings, alias_map, canonical_names = build_all_slot_mappings(wizard_result["tier_selections"])
