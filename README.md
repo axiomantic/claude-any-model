@@ -54,15 +54,31 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/cl
 
 ## Model Tiers
 
-Each Claude tier maps to a recommended OpenRouter model. Run `./claude-any-model models` to pick from curated recommendations or set your own custom model for any tier.
+Each Claude tier maps to a set of OpenRouter models. The recommended pick is marked with **bold**. Run `./claude-any-model models` to choose from these or set your own custom model.
 
-| Tier | Best For | Recommended Model | Price (per 1M in/out) | Context |
-|------|----------|--------------------|-----------------------|---------|
-| Sonnet | Daily coding, agentic tasks | Qwen3 Coder Next | $0.12 / $0.80 | 262k |
-| Opus | Architecture, deep reasoning | Kimi K3 | $3.00 / $15.00 | 1M |
-| Haiku | Quick tasks, completions | DeepSeek V4 Flash | $0.08 / $0.17 | 1M |
-| Fable | Multi-step agents, long context | GLM-5.2 | $0.97 / $3.04 | 1M |
-| Mythos | Frontier, Claude-native | Claude Opus 5 | $5.00 / $25.00 | 1M |
+| Tier | Best For | Model | Price (per 1M in/out) | Context |
+|------|----------|-------|-----------------------|---------|
+| Sonnet | Daily coding, agentic tasks | **Qwen3 Coder Next** | $0.12 / $0.80 | 262k |
+| | | Claude Sonnet 4 | $3.00 / $15.00 | 1M |
+| | | DeepSeek V3 | $0.26 / $1.03 | 163k |
+| | | Qwen3 Coder Flash | $0.20 / $0.97 | 1M |
+| Opus | Architecture, deep reasoning | **Kimi K3** | $3.00 / $15.00 | 1M |
+| | | GLM-5.2 | $0.97 / $3.04 | 1M |
+| | | GPT-5.6 Terra | $2.00 / $12.00 | 1M |
+| | | DeepSeek V4 Pro | $1.19 / $3.56 | 1M |
+| | | Claude Sonnet 4.6 | $3.00 / $15.00 | 1M |
+| Haiku | Quick tasks, completions | **DeepSeek V4 Flash** | $0.08 / $0.17 | 1M |
+| | | Gemini 2.0 Flash | $0.10 / $0.40 | 1M |
+| | | Qwen3 Coder 30B | $0.07 / $0.28 | 262k |
+| | | GPT-5.6 Luna | $0.20 / $1.20 | 1M |
+| Fable | Multi-step agents, long context | **GLM-5.2** | $0.97 / $3.04 | 1M |
+| | | Kimi K3 | $3.00 / $15.00 | 1M |
+| | | DeepSeek V4 Pro | $1.19 / $3.56 | 1M |
+| | | GPT-5.6 Terra | $2.00 / $12.00 | 1M |
+| Mythos | Frontier, Claude-native | **Claude Opus 5** | $5.00 / $25.00 | 1M |
+| | | Kimi K3 Ultra | $3.00 / $15.00 | 1M |
+| | | DeepSeek V4 Pro (Max) | $1.19 / $3.56 | 1M |
+| | | GLM-5.2 (Reasoning) | $0.97 / $3.04 | 1M |
 
 For comparison, Claude's own overage rates are $15-25 per million output tokens. The Sonnet-tier Qwen3 Coder Next at $0.80 output is the main reason to use this project — a full day of coding that would cost ~$50-100 in overage costs roughly $1-3.
 
