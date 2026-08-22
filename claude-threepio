@@ -1297,11 +1297,11 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                 max_slots = td["max_slots"]
                 current_selected = wizard_state["tier_selections"][tname]
                 slots = TIER_FAMILY_SLOTS.get(tname, [])
-
                 if not selectable_indices:
                     selected_idx = 0
                 else:
                     selected_idx = max(0, min(selected_idx, len(selectable_indices) - 1))
+                curr_item_idx = selectable_indices[selected_idx] if selectable_indices else 0
 
                 # Build 2-line screen lines for Left Pane
                 screen_lines = []
