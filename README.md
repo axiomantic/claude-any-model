@@ -16,7 +16,7 @@ Anthropic includes a **Third-Party Inference** mode (called **3P mode** internal
 
 `claude-any-model` breaks this lock-in by using 3P mode as the entry point:
 
-* **Use Any Model in Claude Desktop**: Seamlessly maps Claude's model picker to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, GLM-5.2, Llama 3.3, and Mistral).
+* **Use Any Model in Claude Desktop**: Seamlessly maps Claude's model picker to hundreds of models on OpenRouter (including Qwen3-Coder, DeepSeek V4 Flash, Kimi K3, GLM-5.2, Llama 3.3, and Mistral). 
 * **Cut Inference Costs by 80–95%**: Run state-of-the-art coding and reasoning models at pennies per million tokens (e.g., Qwen3-Coder at $0.12/1M input vs. Claude 3.5 Sonnet at $3.00/1M).
 * **Live Pricing in the Model Picker**: Displays real-time OpenRouter token pricing and context window limits directly in Claude Desktop's dropdown UI (e.g., `Qwen3 Coder ($0.12/$0.80) [262k]`).
 * **Keep Native Claude Features**: Full support for chat history, markdown artifacts, project folders, code execution sessions, and file attachments.
@@ -26,7 +26,6 @@ Anthropic includes a **Third-Party Inference** mode (called **3P mode** internal
 
 1. **Claude Desktop or CLI** sends requests to a lightweight local gateway running on your machine (`http://127.0.0.1:3010`).
 2. **Local Proxy (LiteLLM)** translates Anthropic Messages API requests and forwards them to your selected models on OpenRouter.
-3. **Automated Catalog Sync**: Periodically fetches OpenRouter's live API catalog to update model aliases, context sizes, and pricing labels.
 
 ---
 
@@ -79,41 +78,6 @@ If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inf
 * **Inference Gateway Base URL:** `http://127.0.0.1:3010`
 * **Inference Gateway API Key:** `dummy-key`
 * **Credential Kind:** `Static`
-
-> **Note:** Always quit Claude Desktop before running `./claude-any-model models` so Claude cleanly loads the updated profile on launch.
-
----
-
-## Migrating Existing Sessions to Gateway Mode
-
-When transitioning from standard (1P, Anthropic-direct) mode to Gateway (3P) mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default. The `sync-sessions` step (run automatically during `./claude-any-model install` and `./claude-any-model switch`) handles this by two-way merging session metadata and sidebar groupings between the two modes.
-
-### 1. Enable the Import Feature in Your 3P Profile
-
-By default, Gateway mode disables the migration UI with the message:
-> *"Import isn’t enabled for this deployment. Contact your organization’s administrator to turn it on."*
-
-To unlock it:
-* **Automatic:** Running `./claude-any-model install` or `./claude-any-model models` automatically enables this setting in your active profile.
-* **Manual:** Add the `claudeAiImport` block to your active 3P profile. On macOS this is `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`; on Linux it is `~/.config/Claude-3p/configLibrary/<profile-id>.json`:
-  ```json
-  "claudeAiImport": {
-    "enabled": true,
-    "exportEnabled": true,
-    "bannerBehavior": "detect"
-  }
-  ```
-
-### 2. Import Your Sessions
-
-1. Restart Claude Desktop in Gateway mode.
-2. Open **Settings** (`Cmd + ,` on macOS, `Ctrl + ,` on Linux) -> **Import**.
-3. Select your local sources:
-   * **Claude app data** (imports previous 1P Desktop chat and code sessions)
-   * **Terminal (CLI)** (imports CLI sessions from `~/.claude/projects/`)
-4. Click **Import**.
-
-Your historical sessions, custom titles, and project groupings will immediately appear in your sidebar and search.
 
 ---
 
@@ -180,22 +144,6 @@ Or add to your shell profile for a persistent alias:
 # ~/.zshrc or ~/.bashrc
 alias claude-proxy='ANTHROPIC_BASE_URL="http://127.0.0.1:3010" ANTHROPIC_API_KEY="dummy-key" claude'
 ```
-
----
-
-## Automated Model Recommendations (GitHub Actions)
-
-A weekly GitHub Action evaluates the live OpenRouter catalog using benchmark data (SWE-bench, LiveBench, Chatbot Arena) and pricing shifts to automatically open PRs with updated model recommendations.
-
-### Configuring the Repository Secret
-
-To enable the weekly evaluation workflow in GitHub Actions, add your OpenRouter API key as a repository secret:
-
-```bash
-gh secret set OPENROUTER_API_KEY --repo axiomantic/claude-any-model
-```
-
-*(Or configure it via the GitHub UI: **Settings > Secrets and variables > Actions > New repository secret**)*
 
 ---
 
