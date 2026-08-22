@@ -45,7 +45,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [[ -n $(git status --porcelain) ]]; then
             git checkout -B automated/model-catalog-update
-            git add setup.sh MODEL_RECOMMENDATIONS_REPORT.md
+            git add claude-any-model MODEL_RECOMMENDATIONS_REPORT.md
             git commit -m "chore(models): weekly openrouter recommendations update"
             git push -f origin automated/model-catalog-update
 

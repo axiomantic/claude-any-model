@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-* `./setup.sh sync-sessions` command: two-way merge of session metadata and sidebar groupings between 1P (Regular) and 3P (Gateway) modes. Shows a stats preview and prompts before making changes. Runs automatically as a prompted step during `./setup.sh switch`. Merges by `sessionId` (newer `lastActivityAt` wins on conflict), unions group assignments and starred sessions. Conversation transcripts are already shared via `~/.claude/projects/` and need no sync.
+* `./claude-any-model sync-sessions` command: two-way merge of session metadata and sidebar groupings between 1P (Regular) and 3P (Gateway) modes. Shows a stats preview and prompts before making changes. Runs automatically as a prompted step during `./claude-any-model switch`. Merges by `sessionId` (newer `lastActivityAt` wins on conflict), unions group assignments and starred sessions. Conversation transcripts are already shared via `~/.claude/projects/` and need no sync.
 
 ## 1.11.0 (2026-08-21)
 

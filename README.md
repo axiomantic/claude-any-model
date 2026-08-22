@@ -35,10 +35,10 @@ Anthropic includes a **Third-Party Inference** mode (called **3P mode** internal
 Run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/claude-any-model | bash
 ```
 
-*(Or clone the repository and run `./setup.sh install`)*
+*(Or clone the repository and run `./claude-any-model install`)*
 
 ---
 
@@ -58,7 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-any-model/main/se
 
 In addition to OpenRouter's cloud catalog, you can route Claude Desktop and Claude CLI to **local offline inference engines**:
 
-* **Ollama Auto-Discovery**: If Ollama is running (`http://localhost:11434`), `./setup.sh models` automatically detects your installed models (e.g., `qwen2.5-coder`, `deepseek-r1`) and makes them selectable with `$0.00 / Local` pricing.
+* **Ollama Auto-Discovery**: If Ollama is running (`http://localhost:11434`), `./claude-any-model models` automatically detects your installed models (e.g., `qwen2.5-coder`, `deepseek-r1`) and makes them selectable with `$0.00 / Local` pricing.
 * **LM Studio & vLLM**: Connects to any local OpenAI-compatible endpoint on custom ports (`http://localhost:1234/v1` or `http://localhost:8000/v1`).
 * **Hybrid / Mix & Match**: Assign local models for unlimited free coding iterations (Sonnet / Haiku tiers) while routing heavyweight architectural queries to OpenRouter (Opus tier).
 
@@ -70,7 +70,7 @@ Gateway mode is Claude Desktop's **3P mode** (Third-Party Inference) configured 
 
 ### Automated Configuration (Recommended)
 
-Running `./setup.sh install` or `./setup.sh models` automatically configures both the background gateway daemon (launchd on macOS, systemd user service on Linux) and Claude Desktop's 3P profile. The 3P config directory is `~/Library/Application Support/Claude-3p/configLibrary/` on macOS, or `~/.config/Claude-3p/configLibrary/` on Linux.
+Running `./claude-any-model install` or `./claude-any-model models` automatically configures both the background gateway daemon (launchd on macOS, systemd user service on Linux) and Claude Desktop's 3P profile. The 3P config directory is `~/Library/Application Support/Claude-3p/configLibrary/` on macOS, or `~/.config/Claude-3p/configLibrary/` on Linux.
 
 ### Manual GUI Verification
 
@@ -80,13 +80,13 @@ If verifying settings in Claude Desktop (**Developer > Configure Third-Party Inf
 * **Inference Gateway API Key:** `dummy-key`
 * **Credential Kind:** `Static`
 
-> **Note:** Always quit Claude Desktop before running `./setup.sh models` so Claude cleanly loads the updated profile on launch.
+> **Note:** Always quit Claude Desktop before running `./claude-any-model models` so Claude cleanly loads the updated profile on launch.
 
 ---
 
 ## Migrating Existing Sessions to Gateway Mode
 
-When transitioning from standard (1P, Anthropic-direct) mode to Gateway (3P) mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default. The `sync-sessions` step (run automatically during `./setup.sh install` and `./setup.sh switch`) handles this by two-way merging session metadata and sidebar groupings between the two modes.
+When transitioning from standard (1P, Anthropic-direct) mode to Gateway (3P) mode, Claude Desktop switches to an isolated profile directory (`Claude-3p`), meaning your past sessions and sidebar projects will not appear by default. The `sync-sessions` step (run automatically during `./claude-any-model install` and `./claude-any-model switch`) handles this by two-way merging session metadata and sidebar groupings between the two modes.
 
 ### 1. Enable the Import Feature in Your 3P Profile
 
@@ -94,7 +94,7 @@ By default, Gateway mode disables the migration UI with the message:
 > *"Import isn’t enabled for this deployment. Contact your organization’s administrator to turn it on."*
 
 To unlock it:
-* **Automatic:** Running `./setup.sh install` or `./setup.sh models` automatically enables this setting in your active profile.
+* **Automatic:** Running `./claude-any-model install` or `./claude-any-model models` automatically enables this setting in your active profile.
 * **Manual:** Add the `claudeAiImport` block to your active 3P profile. On macOS this is `~/Library/Application Support/Claude-3p/configLibrary/<profile-id>.json`; on Linux it is `~/.config/Claude-3p/configLibrary/<profile-id>.json`:
   ```json
   "claudeAiImport": {
@@ -123,22 +123,22 @@ You can toggle between **Gateway Mode** (3P — OpenRouter proxy) and **Regular 
 
 ```bash
 # Toggle between Gateway (3P) and Regular (1P) Claude
-./setup.sh switch
+./claude-any-model switch
 
 # Or explicitly switch to a specific mode:
-./setup.sh switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team (1P)
-./setup.sh switch gateway    # Activates OpenRouter proxy mode (3P)
+./claude-any-model switch regular    # Reverts Claude Desktop to native Anthropic Pro/Team (1P)
+./claude-any-model switch gateway    # Activates OpenRouter proxy mode (3P)
 ```
 
 Both modes prompt you to sync sessions and sidebar groupings so your session history, titles, and categories stay mirrored across modes. You can also sync manually at any time:
 
 ```bash
-./setup.sh sync-sessions
+./claude-any-model sync-sessions
 ```
 
 Check the active mode and proxy health at any time:
 ```bash
-./setup.sh status
+./claude-any-model status
 ```
 
 ---
@@ -146,14 +146,14 @@ Check the active mode and proxy health at any time:
 ## CLI Commands
 
 ```bash
-./setup.sh install            # Full setup: venv, API key, model picker, daemon
-./setup.sh launch             # Launch Claude CLI routed through the local proxy
-./setup.sh models             # Reconfigure tier models (live OpenRouter prices)
-./setup.sh switch [mode]      # Toggle between 'gateway' and 'regular' Claude mode
-./setup.sh sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P modes
-./setup.sh status             # Check active mode, daemon health, and Claude 3P profile
-./setup.sh restart            # Restart local gateway daemon
-./setup.sh uninstall          # Stop and remove background service
+./claude-any-model install            # Full setup: venv, API key, model picker, daemon
+./claude-any-model launch             # Launch Claude CLI routed through the local proxy
+./claude-any-model models             # Reconfigure tier models (live OpenRouter prices)
+./claude-any-model switch [mode]      # Toggle between 'gateway' and 'regular' Claude mode
+./claude-any-model sync-sessions      # Merge sessions and sidebar groupings between 1P and 3P modes
+./claude-any-model status             # Check active mode, daemon health, and Claude 3P profile
+./claude-any-model restart            # Restart local gateway daemon
+./claude-any-model uninstall          # Stop and remove background service
 ```
 
 ---
@@ -163,7 +163,7 @@ Check the active mode and proxy health at any time:
 ### Recommended: use the built-in launcher
 
 ```bash
-./setup.sh launch
+./claude-any-model launch
 ```
 
 This sets the correct env vars and `exec`s into `claude` — no need to remember export commands.
