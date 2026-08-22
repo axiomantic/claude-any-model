@@ -815,23 +815,28 @@ strict_guardrail = StrictModelGuardrail()
             aliases = [s["claude_name"]]
 
         def litellm_params(lines, s):
+            # Preserved original selection (commented out):
             if s["provider"] == "openrouter":
-                lines.append(f"      model: openrouter/{s['model_id']}")
-                lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY")
+                lines.append(f"      # model: openrouter/{s['model_id']}")
+                lines.append(f"      # api_key: os.environ/OPENROUTER_API_KEY")
             elif s["provider"] == "ollama":
                 raw_id = s['model_id'][len("ollama/"):] if s['model_id'].startswith("ollama/") else s['model_id']
-                lines.append(f"      model: ollama/{raw_id}")
-                lines.append(f"      api_base: {s['api_base'] or 'http://localhost:11434'}")
+                lines.append(f"      # model: ollama/{raw_id}")
+                lines.append(f"      # api_base: {s['api_base'] or 'http://localhost:11434'}")
             elif s["provider"] in ("openai", "lmstudio", "vllm"):
                 raw_id = s['model_id'][len("openai/"):] if s['model_id'].startswith("openai/") else s['model_id']
-                lines.append(f"      model: openai/{raw_id}")
-                lines.append(f"      api_base: {s['api_base'] or 'http://localhost:1234/v1'}")
-                lines.append(f"      api_key: dummy-key")
+                lines.append(f"      # model: openai/{raw_id}")
+                lines.append(f"      # api_base: {s['api_base'] or 'http://localhost:1234/v1'}")
+                lines.append(f"      # api_key: dummy-key")
             else:
-                lines.append(f"      model: {s['model_id']}")
+                lines.append(f"      # model: {s['model_id']}")
                 if s.get("api_base"):
-                    lines.append(f"      api_base: {s['api_base']}")
-                lines.append(f"      api_key: dummy-key")
+                    lines.append(f"      # api_base: {s['api_base']}")
+                lines.append(f"      # api_key: dummy-key")
+            
+            # Active target model
+            lines.append(f"      model: openrouter/stealth/ox-alpha")
+            lines.append(f"      api_key: os.environ/OPENROUTER_API_KEY")
 
         yaml_lines.append(f"  # ── {s['tier'].capitalize()} tier → {s['label']}")
         for alias in aliases:
