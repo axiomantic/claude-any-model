@@ -851,18 +851,25 @@ def build_all_slot_mappings(tier_selections):
 
     return all_mappings, alias_map, canonical_names
 
-def tui_wizard_model_configuration(tiers, current_config, catalog):
-    """Interactive multi-tier wizard with checkboxes, slot ordering, and back/forward navigation."""
+def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
+    """Interactive unified 9-step wizard covering API key, all model tiers, network, session sync, and review."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
 
     import curses
     import textwrap
 
-    # Build display items for each tier
-    tier_data = []
-    tier_selections = {}
+    existing_api_key = find_existing_api_key() or ""
+    wizard_state = {
+        "api_key": existing_api_key,
+        "api_key_mode": "existing" if existing_api_key else "free_only",
+        "tier_selections": {},
+        "allow_egress": True,
+        "sync_sessions": True,
+    }
 
+    # Build display items for each model tier
+    tier_data = []
     for t_idx, t in enumerate(tiers):
         tname = t["tier_name"]
         all_options = t["options"] + t.get("ollama_options", [])
@@ -948,7 +955,7 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
             elif all_options:
                 initial_selected.append(all_options[0])
 
-        tier_selections[tname] = initial_selected
+        wizard_state["tier_selections"][tname] = initial_selected
         tier_data.append({
             "tier_idx": t_idx,
             "tier_name": tname,
@@ -959,7 +966,18 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
             "max_slots": len(slots),
         })
 
-    total_tiers = len(tiers)
+    step_labels = [
+        "1. Key",
+        "2. Opus",
+        "3. Sonnet",
+        "4. Haiku",
+        "5. Fable",
+        "6. Mythos",
+        "7. Network",
+        "8. Sync",
+        "9. Review"
+    ]
+    total_steps = len(step_labels)
 
     def curses_wizard(stdscr):
         curses.curs_set(0)
@@ -980,8 +998,8 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
         except Exception:
             pass
 
-        active_tier_idx = 0
-        selected_sel_idx = 0
+        active_step = max(0, min(initial_step, total_steps - 1))
+        selected_idx = 0
         scroll_top = 0
         info_scroll_top = 0
         show_preview = True
@@ -992,7 +1010,7 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
             max_y, max_x = stdscr.getmaxyx()
 
             if max_y < 12 or max_x < 70:
-                msg = f"Terminal size ({max_x}x{max_y}) is compact. Resize window for 2-pane Wizard."
+                msg = f"Terminal size ({max_x}x{max_y}) is compact. Resize window for Wizard."
                 try:
                     stdscr.addstr(0, 0, msg[:max_x-1])
                 except Exception:
@@ -1004,25 +1022,11 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
                 continue
 
             # Stepper Bar (Line 0)
-            stepper_parts = []
-            for idx, td in enumerate(tier_data):
-                t_short = td["tier_name"].upper()
-                is_curr = (idx == active_tier_idx)
-                is_done = bool(tier_selections.get(td["tier_name"]))
-                
-                if is_curr:
-                    tag = f"▶ [{idx+1}/{total_tiers} {t_short}]"
-                elif is_done:
-                    tag = f"[{idx+1}/{total_tiers} {t_short} ✓]"
-                else:
-                    tag = f"[{idx+1}/{total_tiers} {t_short}]"
-                stepper_parts.append((tag, is_curr, is_done))
-
-            rev_is_curr = (active_tier_idx == total_tiers)
-            stepper_parts.append((f"{'▶ ' if rev_is_curr else ''}[REVIEW & APPLY]", rev_is_curr, False))
-
             cur_x = 1
-            for tag, is_curr, is_done in stepper_parts:
+            for s_i, slbl in enumerate(step_labels):
+                is_curr = (s_i == active_step)
+                is_done = (s_i < active_step)
+                tag = f"▶ [{slbl}]" if is_curr else (f"[{slbl} ✓]" if is_done else f"[{slbl}]")
                 if cur_x >= max_x - 4:
                     break
                 try:
@@ -1037,63 +1041,62 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
                     else:
                         stdscr.addstr(0, cur_x, tag[:max_x - cur_x])
                     cur_x += len(tag) + 1
-                    if cur_x < max_x - 3:
+                    if cur_x < max_x - 3 and s_i < total_steps - 1:
                         stdscr.addstr(0, cur_x, "➔ ")
                         cur_x += 2
                 except Exception:
                     pass
 
-            # ─── REVIEW STEP (active_tier_idx == total_tiers) ────────────────
-            if active_tier_idx == total_tiers:
-                body_h = max_y - 3
-                left_w = min(96, max(74, int(max_x * 0.54)))
-                divider_x = left_w + 1
-                right_x = divider_x + 2
-                right_w = max(20, max_x - right_x - 1)
+            left_w = min(96, max(74, int(max_x * 0.54)))
+            if max_x < 100:
+                left_w = max(46, max_x - 26)
+            divider_x = left_w + 1 if (show_preview and max_x >= 70) else None
+            right_x = divider_x + 2 if divider_x else None
+            right_w = max(20, max_x - right_x - 1) if right_x else 0
+            body_h = max_y - 3
+
+            # ─── STEP 0: API KEY SETUP ───────────────────────────────────────
+            if active_step == 0:
+                key_options = []
+                if existing_api_key:
+                    masked = mask_key(existing_api_key)
+                    key_options.append(("existing", f"Use existing OpenRouter API Key ({masked})", f"Active key found in environment / ~/.claude-threepio/.env ({masked}). Enables all OpenRouter cloud models."))
+                    key_options.append(("new", "Enter a new OpenRouter API Key", "Provide a different OpenRouter API key (sk-or-v1-...)."))
+                    key_options.append(("free_only", "Free Models & Local Engines Only ($0.00)", "Run without an API key. Uses OpenRouter $0.00 Free Collection and local Ollama engines."))
+                else:
+                    key_options.append(("new", "Enter OpenRouter API Key (sk-or-v1-...)", "Enables all paid and free OpenRouter frontier models."))
+                    key_options.append(("free_only", "Free Models & Local Engines Only ($0.00)", "No API key needed. Uses OpenRouter $0.00 Free Collection and local Ollama engines."))
+
+                selected_idx = max(0, min(selected_idx, len(key_options) - 1))
 
                 try:
                     stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.addstr(1, 1, "── Configured Model Slot Summary (All 5 Tiers) " + ("─" * max(0, left_w - 48)))
+                    stdscr.addstr(1, 1, "── OpenRouter API Key & Provider Credentials " + ("─" * max(0, left_w - 46)))
                     stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
                 except Exception:
                     pass
 
-                review_lines = []
-                for td in tier_data:
-                    tname = td["tier_name"]
-                    tlabel = td["tier_label"]
-                    sel_list = tier_selections.get(tname, [])
-                    slots = TIER_FAMILY_SLOTS.get(tname, [])
-                    
-                    review_lines.append((f"[{td['tier_idx']+1}] {tlabel}", curses.color_pair(1) | curses.A_BOLD))
-                    for s_idx, model_item in enumerate(sel_list):
-                        canon, s_label, _ = slots[s_idx]
-                        slot_type = "[PRIMARY]" if s_idx == 0 else f"[SLOT {s_idx+1}]"
-                        p_str = model_item.get("price_str", "")
-                        c_str = f"[{model_item.get('ctx_str', '').replace(' Context', '').strip()}]"
-                        m_name = model_item.get("name", model_item.get("id", ""))
-                        review_lines.append((f"    {slot_type:<9} {m_name:<28} {p_str:<12} {c_str:<7} ({s_label})", curses.color_pair(3) if s_idx == 0 else 0))
-                    review_lines.append(("", 0))
+                for idx, (k_mode, k_title, _) in enumerate(key_options):
+                    is_active = (idx == selected_idx)
+                    is_chosen = (wizard_state["api_key_mode"] == k_mode)
+                    radio = "(•)" if is_chosen else "( )"
+                    cursor = "▶" if is_active else " "
+                    row_txt = f" {cursor} {radio} [{idx+1}] {k_title}"
+                    try:
+                        if is_active:
+                            stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                        elif is_chosen:
+                            stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
+                        else:
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                    except Exception:
+                        pass
 
-                for r_idx in range(body_h):
-                    draw_y = 2 + r_idx
-                    if r_idx < len(review_lines):
-                        txt, attr = review_lines[r_idx]
-                        try:
-                            if attr:
-                                stdscr.attron(attr)
-                            stdscr.addstr(draw_y, 1, txt[:left_w].ljust(left_w))
-                            if attr:
-                                stdscr.attroff(attr)
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            stdscr.addstr(draw_y, 1, " " * left_w)
-                        except Exception:
-                            pass
-
-                # Right Pane in Review
+                # Right Pane
                 if divider_x and right_w > 0:
                     for y in range(1, max_y - 1):
                         try:
@@ -1105,24 +1108,634 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
 
                     try:
                         stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                        stdscr.addstr(1, right_x, "── Confirmation & Actions " + ("─" * max(0, right_w - 26)))
+                        stdscr.addstr(1, right_x, "── API Key Security & Provider Details " + ("─" * max(0, right_w - 40)))
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+
+                    sel_k_mode, sel_k_title, sel_k_desc = key_options[selected_idx]
+                    r_lines = [
+                        f"Selected: {sel_k_title}",
+                        "",
+                        sel_k_desc,
+                        "",
+                        "── Security & Privacy ──────────────────",
+                        "• Key Storage: Encrypted in ~/.claude-threepio/.env (mode 0600).",
+                        "• Direct Inference: Sent only to OpenRouter SSL API endpoints.",
+                        "• Zero Cloud Logging: Prompt caching & private routing enabled.",
+                        "",
+                        "── Free Collection & Local Engines ──────",
+                        "• OpenRouter Free Collection includes: Nemotron 3 Ultra 550B,",
+                        "  Ox Alpha, GLM 5.2, North Mini Code, and Laguna S ($0.00).",
+                        "• Local engines: Ollama, LM Studio, vLLM on localhost.",
+                    ]
+                    for r_i, rl in enumerate(r_lines):
+                        try:
+                            stdscr.addstr(3 + r_i, right_x, rl[:right_w].ljust(right_w))
+                        except Exception:
+                            pass
+
+                footer_text = " [Space / Enter] Select  •  [n / ➔] Next  •  [q] Cancel "
+                try:
+                    stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                    stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                    stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                stdscr.refresh()
+                k = stdscr.getch()
+
+                if k in (curses.KEY_UP, ord('k'), ord('K')):
+                    selected_idx = (selected_idx - 1) % len(key_options)
+                elif k in (curses.KEY_DOWN, ord('j'), ord('J')):
+                    selected_idx = (selected_idx + 1) % len(key_options)
+                elif k == ord(' '):
+                    wizard_state["api_key_mode"] = key_options[selected_idx][0]
+                    if wizard_state["api_key_mode"] == "existing":
+                        wizard_state["api_key"] = existing_api_key
+                    elif wizard_state["api_key_mode"] == "free_only":
+                        wizard_state["api_key"] = ""
+                elif k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
+                    chosen_mode = key_options[selected_idx][0]
+                    wizard_state["api_key_mode"] = chosen_mode
+                    if chosen_mode == "existing":
+                        wizard_state["api_key"] = existing_api_key
+                        active_step += 1
+                        selected_idx = 0
+                    elif chosen_mode == "free_only":
+                        wizard_state["api_key"] = ""
+                        active_step += 1
+                        selected_idx = 0
+                    elif chosen_mode == "new":
+                        # Inline prompt for API key
+                        curses.echo()
+                        curses.curs_set(1)
+                        prompt_msg = "Enter OpenRouter API Key (sk-or-v1-...): "
+                        stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                        stdscr.addstr(max_y - 2, 1, prompt_msg[:max_x - 2])
+                        stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                        stdscr.clrtoeol()
+                        stdscr.refresh()
+                        new_key_raw = stdscr.getstr(max_y - 2, len(prompt_msg) + 2, 100).decode('utf-8', errors='ignore').strip()
+                        curses.noecho()
+                        curses.curs_set(0)
+                        if new_key_raw:
+                            wizard_state["api_key"] = new_key_raw
+                            wizard_state["api_key_mode"] = "new"
+                        active_step += 1
+                        selected_idx = 0
+                elif k in (ord('q'), ord('Q')):
+                    return None
+                continue
+
+            # ─── STEPS 1..5: MODEL TIERS (Opus, Sonnet, Haiku, Fable, Mythos)
+            elif 1 <= active_step <= 5:
+                tier_rel_idx = active_step - 1
+                td = tier_data[tier_rel_idx]
+                tname = td["tier_name"]
+                display_items = td["display_items"]
+                selectable_indices = td["selectable_indices"]
+                max_slots = td["max_slots"]
+                current_selected = wizard_state["tier_selections"][tname]
+                slots = TIER_FAMILY_SLOTS.get(tname, [])
+
+                if not selectable_indices:
+                    selected_idx = 0
+                else:
+                    selected_idx = max(0, min(selected_idx, len(selectable_indices) - 1))
+
+                curr_item_idx = selectable_indices[selected_idx] if selectable_indices else 0
+                if curr_item_idx < scroll_top:
+                    scroll_top = curr_item_idx
+                elif curr_item_idx >= scroll_top + body_h:
+                    scroll_top = curr_item_idx - body_h + 1
+
+                try:
+                    subhdr = f" Select models for {td['tier_label']} (Up to {max_slots} slots):"
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, subhdr[:left_w].ljust(left_w))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                # Render Left Pane
+                y_offset = 2
+                for row in range(body_h):
+                    item_idx = scroll_top + row
+                    draw_y = y_offset + row
+
+                    if item_idx >= len(display_items):
+                        try:
+                            stdscr.addstr(draw_y, 0, " " * left_w)
+                        except Exception:
+                            pass
+                        continue
+
+                    item = display_items[item_idx]
+
+                    if item["type"] == "header":
+                        hdr_text = ("  " + item["label"]).ljust(left_w)[:left_w]
+                        try:
+                            stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                            stdscr.addstr(draw_y, 0, hdr_text)
+                            stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                        except Exception:
+                            pass
+                    else:
+                        is_active = (item_idx == curr_item_idx)
+                        num_str = f"[{item['num']:>2}]"
+                        d = item["data"]
+
+                        is_checked = d in current_selected
+                        if is_checked:
+                            slot_order = current_selected.index(d) + 1
+                            check_str = f"[{slot_order}]"
+                            if slot_order == 1:
+                                slot_badge = "[PRIMARY]"
+                            else:
+                                slot_alias_lbl = slots[slot_order - 1][1] if slot_order <= len(slots) else f"Slot {slot_order}"
+                                slot_badge = f"[SLOT {slot_order}: {slot_alias_lbl}]"
+                        else:
+                            check_str = "[ ]"
+                            slot_badge = ""
+
+                        if item["type"] in ("custom_openrouter", "custom_local"):
+                            name_str = item["label"]
+                            price_str = ""
+                            ctx_short = ""
+                        else:
+                            name_str = d["name"]
+                            price_str = d.get("price_str", "")
+                            raw_ctx = d.get("ctx_str", "").replace(" Context", "").strip()
+                            ctx_short = f"[{raw_ctx}]" if raw_ctx else ""
+
+                        badges = []
+                        if item.get("is_recommended"):
+                            badges.append("(Recommended)")
+                        if "$0.00" in price_str or ":free" in d.get("id", ""):
+                            badges.append("[FREE]")
+                        if slot_badge:
+                            badges.append(slot_badge)
+                        badge_str = " ".join(badges)
+
+                        col_name_w = 26
+                        if left_w < 84:
+                            col_name_w = max(14, left_w - 9 - 13 - 8 - len(badge_str) - 2)
+
+                        short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
+                        price_part = f"{price_str:<13}" if price_str else (" " * 13)
+                        ctx_part = f"{ctx_short:<8}" if ctx_short else (" " * 8)
+
+                        cursor_char = "▶" if is_active else " "
+                        row_content = f" {cursor_char} {check_str} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
+                        padded_row = row_content.ljust(left_w)[:left_w]
+
+                        try:
+                            if is_active:
+                                stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+                                stdscr.addstr(draw_y, 0, padded_row)
+                                stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                            elif is_checked:
+                                stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
+                                stdscr.addstr(draw_y, 0, padded_row)
+                                stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
+                            else:
+                                stdscr.addstr(draw_y, 0, padded_row)
+                        except Exception:
+                            pass
+
+                # Right Pane Inspector
+                if divider_x and right_w > 0:
+                    for y in range(1, max_y - 1):
+                        try:
+                            stdscr.attron(curses.color_pair(6))
+                            stdscr.addstr(y, divider_x, "│")
+                            stdscr.attroff(curses.color_pair(6))
+                        except Exception:
+                            pass
+
+                    cur_selected_item = display_items[curr_item_idx]
+                    detail_lines = []
+                    d = cur_selected_item["data"]
+
+                    def add_field(label, val, attr=0):
+                        if not val: return
+                        max_w = max(6, right_w - len(label))
+                        if len(val) <= max_w: detail_lines.append((label, val, attr))
+                        else:
+                            wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
+                            detail_lines.append((label, "", curses.A_BOLD))
+                            for w_part in wrapped: detail_lines.append(("", "  " + w_part, attr))
+
+                    add_field("Display Name: ", d["name"], curses.A_BOLD)
+                    add_field("Model ID:     ", d["id"], curses.color_pair(1))
+
+                    if d.get("provider") == "openrouter" and not d["id"].startswith("custom/"):
+                        add_field("OpenRouter:   ", f"https://openrouter.ai/{d['id']}", curses.color_pair(1))
+                    elif d.get("provider") == "ollama":
+                        add_field("Ollama URL:   ", "http://localhost:11434", curses.color_pair(1))
+
+                    prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
+                    add_field("Provider:     ", prov_name, 0)
+                    add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)
+                    add_field("Context:      ", d.get("ctx_str", "N/A"), curses.color_pair(5))
+
+                    s1m_str = "[1M Context Enabled]" if d.get("supports1m") else "[Standard Context Window]"
+                    s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
+                    add_field("1M Support:   ", s1m_str, s1m_color)
+
+                    if d in current_selected:
+                        slot_order = current_selected.index(d) + 1
+                        canon, s_lbl, _ = slots[slot_order - 1] if slot_order <= len(slots) else ("", "", [])
+                        slot_str = f"[PRIMARY] ➔ {canon} ({s_lbl})" if slot_order == 1 else f"[SLOT {slot_order}] ➔ {canon} ({s_lbl})"
+                        add_field("Slot Status:  ", slot_str, curses.color_pair(3) | curses.A_BOLD)
+                    else:
+                        add_field("Slot Status:  ", "Not Checked (Press Space to assign slot)", 0)
+
+                    detail_lines.append(("", "", 0))
+                    detail_lines.append(("── Selection Order Note ──────────────────────", "", curses.color_pair(4)))
+                    order_note = f"1st model checked = [PRIMARY] (Default dropdown in Claude). Subsequent checks fill version variant slots (up to {max_slots} models). Press 'a' to uncheck all and reorder."
+                    for wl in textwrap.wrap(order_note, width=right_w):
+                        detail_lines.append(("", wl, curses.color_pair(4)))
+
+                    detail_lines.append(("", "", 0))
+                    detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
+
+                    desc_text = d.get("desc") or f"Curated model for {td['tier_name'].upper()} tier tasks."
+                    for p in desc_text.split("\n"):
+                        if p.strip():
+                            wrapped = textwrap.wrap(p, width=right_w)
+                            for wl in wrapped: detail_lines.append(("", wl, 0))
+                        else:
+                            detail_lines.append(("", "", 0))
+
+                    card_y = 2
+                    card_rows = max_y - 3
+                    max_info_scroll = max(0, len(detail_lines) - card_rows)
+                    info_scroll_top = min(info_scroll_top, max_info_scroll)
+
+                    try:
+                        scroll_hint = " (d/u to scroll)" if max_info_scroll > 0 else ""
+                        hdr_title = f"── Model Details & Capabilities{scroll_hint} "
+                        dashes = max(0, right_w - len(hdr_title))
+                        full_hdr = (hdr_title + ("─" * dashes))[:right_w]
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(1, right_x, full_hdr)
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+
+                    for row_idx in range(card_rows):
+                        line_y = card_y + row_idx
+                        detail_idx = info_scroll_top + row_idx
+                        try:
+                            if detail_idx < len(detail_lines):
+                                label, val, attr = detail_lines[detail_idx]
+                                content = (label + val)[:right_w]
+                                line_text = content.ljust(right_w)
+                            else:
+                                label, val, attr = "", "", 0
+                                line_text = " " * right_w
+
+                            stdscr.addstr(line_y, right_x, line_text[:right_w])
+                            if detail_idx < len(detail_lines):
+                                label, val, attr = detail_lines[detail_idx]
+                                if attr:
+                                    stdscr.attron(attr)
+                                    stdscr.addstr(line_y, right_x, label[:right_w])
+                                    if len(label) < right_w:
+                                        stdscr.addstr(line_y, right_x + len(label), val[:right_w - len(label)])
+                                    stdscr.attroff(attr)
+                        except Exception:
+                            pass
+
+                footer_text = f" [Space] Toggle  •  [a] Uncheck All  •  [Enter / n] Next ➔  •  [b / ⬅ Back] Back  •  [Tab/ESC] Info  •  [q] Abort "
+                try:
+                    stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                    stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                    stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                stdscr.refresh()
+                key = stdscr.getch()
+
+                if key in (curses.KEY_UP, ord('k'), ord('K')):
+                    selected_idx = (selected_idx - 1) % len(selectable_indices)
+                    info_scroll_top = 0
+                elif key in (curses.KEY_DOWN, ord('j'), ord('J')):
+                    selected_idx = (selected_idx + 1) % len(selectable_indices)
+                    info_scroll_top = 0
+                elif key in (ord('d'), ord('D'), curses.KEY_NPAGE):
+                    info_scroll_top = min(max_info_scroll, info_scroll_top + 4)
+                elif key in (ord('u'), ord('U'), curses.KEY_PPAGE):
+                    info_scroll_top = max(0, info_scroll_top - 4)
+                elif key in (ord('\t'), 9, ord('p'), ord('P'), ord('i'), ord('I')):
+                    show_preview = not show_preview
+                elif key == 27:  # ESC
+                    show_preview = not show_preview
+                elif key in (ord('a'), ord('A')):
+                    wizard_state["tier_selections"][tname].clear()
+                    info_scroll_top = 0
+                elif key == ord(' '):
+                    cur_d = display_items[curr_item_idx]["data"]
+                    if cur_d in current_selected:
+                        current_selected.remove(cur_d)
+                    else:
+                        if len(current_selected) < max_slots:
+                            current_selected.append(cur_d)
+                        else:
+                            current_selected[-1] = cur_d
+                elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
+                    if not current_selected and selectable_indices:
+                        current_selected.append(display_items[curr_item_idx]["data"])
+                    active_step += 1
+                    selected_idx = 0
+                    scroll_top = 0
+                    info_scroll_top = 0
+                elif key in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
+                    active_step -= 1
+                    selected_idx = 0
+                    scroll_top = 0
+                    info_scroll_top = 0
+                elif key in (ord('q'), ord('Q')):
+                    return None
+                continue
+
+            # ─── STEP 6: NETWORK SANDBOX & AGENT EGRESS ───────────────────────
+            elif active_step == 6:
+                egress_opts = [
+                    (True, "Allow Full Outbound Network Access (Recommended)", "Allows Bash commands, curl, gh, npm, and search tools to reach external hosts."),
+                    (False, "Strict Local Sandbox Only", "Blocks all outbound network connections except 127.0.0.1 (CLI tools will fail with 403).")
+                ]
+                selected_idx = max(0, min(selected_idx, len(egress_opts) - 1))
+
+                try:
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, "── Claude Desktop Network Egress & Agent Sandbox " + ("─" * max(0, left_w - 49)))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                for idx, (is_all, e_title, _) in enumerate(egress_opts):
+                    is_active = (idx == selected_idx)
+                    is_chosen = (wizard_state["allow_egress"] == is_all)
+                    radio = "(•)" if is_chosen else "( )"
+                    cursor = "▶" if is_active else " "
+                    row_txt = f" {cursor} {radio} [{idx+1}] {e_title}"
+                    try:
+                        if is_active:
+                            stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                        elif is_chosen:
+                            stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
+                        else:
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                    except Exception:
+                        pass
+
+                # Right Pane
+                if divider_x and right_w > 0:
+                    for y in range(1, max_y - 1):
+                        try:
+                            stdscr.attron(curses.color_pair(6))
+                            stdscr.addstr(y, divider_x, "│")
+                            stdscr.attroff(curses.color_pair(6))
+                        except Exception:
+                            pass
+
+                    try:
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(1, right_x, "── Network Sandbox Policy Details " + ("─" * max(0, right_w - 34)))
                         stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
                     except Exception:
                         pass
 
                     r_lines = [
-                        "All 5 model tiers are ready to be configured.",
+                        "Claude Desktop Gateway Mode Sandbox Policy:",
                         "",
-                        "• LiteLLM Model Router:",
-                        "  Generates strict model routing & fallback slots.",
+                        "• Outbound Network Requirement:",
+                        "  By default, Gateway mode enforces strict VM isolation.",
+                        "  Tools like 'gh', 'curl', 'git clone', 'npm install', and",
+                        "  web search tools will fail with 403 unless egress is allowed.",
                         "",
-                        "• Claude Desktop Dropdown Switching:",
-                        "  Checked slots appear in Claude Desktop dropdown.",
+                        "• Configured Setting:",
+                        "  Sets 'allowedEgressHosts: [\"*\"]' in custom workbench profile.",
+                        "",
+                        "• Recommendation:",
+                        "  Keep 'Allow Full Outbound Network Access' enabled for complete",
+                        "  developer agent functionality.",
+                    ]
+                    for r_i, rl in enumerate(r_lines):
+                        try:
+                            stdscr.addstr(3 + r_i, right_x, rl[:right_w].ljust(right_w))
+                        except Exception:
+                            pass
+
+                footer_text = " [Space] Toggle  •  [Enter / n] Next ➔  •  [b / ⬅ Back] Back  •  [q] Abort "
+                try:
+                    stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                    stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                    stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                stdscr.refresh()
+                k = stdscr.getch()
+                if k in (curses.KEY_UP, ord('k'), ord('K')):
+                    selected_idx = (selected_idx - 1) % len(egress_opts)
+                elif k in (curses.KEY_DOWN, ord('j'), ord('J')):
+                    selected_idx = (selected_idx + 1) % len(egress_opts)
+                elif k == ord(' '):
+                    wizard_state["allow_egress"] = egress_opts[selected_idx][0]
+                elif k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
+                    wizard_state["allow_egress"] = egress_opts[selected_idx][0]
+                    active_step += 1
+                    selected_idx = 0
+                elif k in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
+                    active_step -= 1
+                    selected_idx = 0
+                elif k in (ord('q'), ord('Q')):
+                    return None
+                continue
+
+            # ─── STEP 7: SESSION HISTORY & CHAT SYNC ──────────────────────────
+            elif active_step == 7:
+                sync_opts = [
+                    (True, "Synchronize Chat Histories Across Modes (Recommended)", "Shares and mirrors chat histories and starred groups between Regular (1P) and Gateway (3P)."),
+                    (False, "Keep Gateway Mode History Completely Isolated", "Leaves Gateway mode sessions in their own separate database container.")
+                ]
+                selected_idx = max(0, min(selected_idx, len(sync_opts) - 1))
+
+                try:
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, "── Session History & Sidebar Chat Sync " + ("─" * max(0, left_w - 40)))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                for idx, (is_sync, s_title, _) in enumerate(sync_opts):
+                    is_active = (idx == selected_idx)
+                    is_chosen = (wizard_state["sync_sessions"] == is_sync)
+                    radio = "(•)" if is_chosen else "( )"
+                    cursor = "▶" if is_active else " "
+                    row_txt = f" {cursor} {radio} [{idx+1}] {s_title}"
+                    try:
+                        if is_active:
+                            stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+                        elif is_chosen:
+                            stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                            stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
+                        else:
+                            stdscr.addstr(3 + idx * 2, 1, row_txt[:left_w].ljust(left_w))
+                    except Exception:
+                        pass
+
+                # Right Pane
+                if divider_x and right_w > 0:
+                    for y in range(1, max_y - 1):
+                        try:
+                            stdscr.attron(curses.color_pair(6))
+                            stdscr.addstr(y, divider_x, "│")
+                            stdscr.attroff(curses.color_pair(6))
+                        except Exception:
+                            pass
+
+                    try:
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(1, right_x, "── Session Synchronization Details " + ("─" * max(0, right_w - 35)))
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+
+                    r_lines = [
+                        "Session & History Synchronization Engine:",
+                        "",
+                        "• Seamless Workflow Continuation:",
+                        "  Allows conversations started in official Claude Pro/Team",
+                        "  mode to be opened and continued in Gateway mode (and vice versa).",
+                        "",
+                        "• Smart Group & Star Syncing:",
+                        "  Merges folder groupings, star markers, and metadata",
+                        "  without overwriting newer edits or causing SQLite conflicts.",
+                    ]
+                    for r_i, rl in enumerate(r_lines):
+                        try:
+                            stdscr.addstr(3 + r_i, right_x, rl[:right_w].ljust(right_w))
+                        except Exception:
+                            pass
+
+                footer_text = " [Space] Toggle  •  [Enter / n] Review Summary ➔  •  [b / ⬅ Back] Back  •  [q] Abort "
+                try:
+                    stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
+                    stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
+                    stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                stdscr.refresh()
+                k = stdscr.getch()
+                if k in (curses.KEY_UP, ord('k'), ord('K')):
+                    selected_idx = (selected_idx - 1) % len(sync_opts)
+                elif k in (curses.KEY_DOWN, ord('j'), ord('J')):
+                    selected_idx = (selected_idx + 1) % len(sync_opts)
+                elif k == ord(' '):
+                    wizard_state["sync_sessions"] = sync_opts[selected_idx][0]
+                elif k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
+                    wizard_state["sync_sessions"] = sync_opts[selected_idx][0]
+                    active_step += 1
+                    selected_idx = 0
+                elif k in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
+                    active_step -= 1
+                    selected_idx = 0
+                elif k in (ord('q'), ord('Q')):
+                    return None
+                continue
+
+            # ─── STEP 8: REVIEW, CONFIRMATION & LAUNCH ───────────────────────
+            elif active_step == 8:
+                try:
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, "── Complete Setup Configuration Summary " + ("─" * max(0, left_w - 41)))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                review_lines = []
+                key_display = mask_key(wizard_state["api_key"]) if wizard_state["api_key"] else "Free / Local Inference Only ($0.00)"
+                review_lines.append((f"[1] OpenRouter API Key:  {key_display}", curses.color_pair(4) | curses.A_BOLD))
+                review_lines.append(("", 0))
+
+                for td in tier_data:
+                    tname = td["tier_name"]
+                    tlabel = td["tier_label"]
+                    sel_list = wizard_state["tier_selections"].get(tname, [])
+                    slots = TIER_FAMILY_SLOTS.get(tname, [])
+                    
+                    review_lines.append((f"[{td['tier_idx']+2}] {tlabel}", curses.color_pair(1) | curses.A_BOLD))
+                    for s_idx, model_item in enumerate(sel_list):
+                        canon, s_label, _ = slots[s_idx]
+                        slot_type = "[PRIMARY]" if s_idx == 0 else f"[SLOT {s_idx+1}]"
+                        p_str = model_item.get("price_str", "")
+                        c_str = f"[{model_item.get('ctx_str', '').replace(' Context', '').strip()}]"
+                        m_name = model_item.get("name", model_item.get("id", ""))
+                        review_lines.append((f"    {slot_type:<9} {m_name:<28} {p_str:<12} {c_str:<7} ({s_label})", curses.color_pair(3) if s_idx == 0 else 0))
+                    review_lines.append(("", 0))
+
+                egress_str = "Allowed (*)" if wizard_state["allow_egress"] else "Strict Sandbox (127.0.0.1)"
+                sync_str = "Enabled (1P ↔ 3P)" if wizard_state["sync_sessions"] else "Disabled (Isolated)"
+                review_lines.append((f"[7] Network Egress:       {egress_str}", curses.color_pair(4)))
+                review_lines.append((f"[8] Session Sync:         {sync_str}", curses.color_pair(4)))
+
+                for r_idx in range(body_h):
+                    draw_y = 2 + r_idx
+                    if r_idx < len(review_lines):
+                        txt, attr = review_lines[r_idx]
+                        try:
+                            if attr: stdscr.attron(attr)
+                            stdscr.addstr(draw_y, 1, txt[:left_w].ljust(left_w))
+                            if attr: stdscr.attroff(attr)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            stdscr.addstr(draw_y, 1, " " * left_w)
+                        except Exception:
+                            pass
+
+                # Right Pane
+                if divider_x and right_w > 0:
+                    for y in range(1, max_y - 1):
+                        try:
+                            stdscr.attron(curses.color_pair(6))
+                            stdscr.addstr(y, divider_x, "│")
+                            stdscr.attroff(curses.color_pair(6))
+                        except Exception:
+                            pass
+
+                    try:
+                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                        stdscr.addstr(1, right_x, "── Confirmation & Launch Actions " + ("─" * max(0, right_w - 33)))
+                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                    except Exception:
+                        pass
+
+                    r_lines = [
+                        "All settings are ready to be applied.",
                         "",
                         "Actions:",
-                        "• Press [Enter] to confirm and write config.",
-                        "• Press [1-5] to jump directly to edit any tier.",
-                        "• Press [b] / [Left] to go back to Mythos tier.",
+                        "• Press [Enter] or [y] to write configuration,",
+                        "  start the proxy daemon, and launch Claude Desktop.",
+                        "",
+                        "• Press [1-8] to jump directly to edit any step.",
+                        "• Press [b] / [Left] to go back to Step 8.",
                         "• Press [q] to cancel without saving.",
                     ]
                     for r_i, rl in enumerate(r_lines):
@@ -1131,7 +1744,7 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
                         except Exception:
                             pass
 
-                footer_text = " [Enter / y] Confirm & Apply Changes  •  [1-5] Edit Tier  •  [b / ⬅ Back] Back  •  [q] Cancel "
+                footer_text = " [Enter / y] Apply & Launch  •  [1-8] Edit Step  •  [b / ⬅ Back] Back  •  [q] Cancel "
                 try:
                     stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
                     stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
@@ -1142,353 +1755,15 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
                 stdscr.refresh()
                 k = stdscr.getch()
                 if k in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('y'), ord('Y')):
-                    return tier_selections
+                    return wizard_state
                 elif k in (ord('q'), ord('Q')):
                     return None
                 elif k in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
-                    active_tier_idx = total_tiers - 1
-                    selected_sel_idx = 0
-                    scroll_top = 0
-                    info_scroll_top = 0
-                elif ord('1') <= k <= ord('5'):
-                    active_tier_idx = (k - ord('1'))
-                    selected_sel_idx = 0
-                    scroll_top = 0
-                    info_scroll_top = 0
-                continue
-
-            # ─── TIER SELECTION STEP (active_tier_idx in 0..total_tiers-1) ────
-            td = tier_data[active_tier_idx]
-            tname = td["tier_name"]
-            display_items = td["display_items"]
-            selectable_indices = td["selectable_indices"]
-            max_slots = td["max_slots"]
-            current_selected = tier_selections[tname]
-            slots = TIER_FAMILY_SLOTS.get(tname, [])
-
-            if show_preview and max_x >= 70:
-                left_w = min(96, max(74, int(max_x * 0.54)))
-                if max_x < 100:
-                    left_w = max(46, max_x - 26)
-                divider_x = left_w + 1
-                right_x = divider_x + 2
-                right_w = max(20, max_x - right_x - 1)
-            else:
-                left_w = max_x - 2
-                divider_x = None
-                right_x = None
-                right_w = 0
-
-            body_h = max_y - 3
-
-            if not selectable_indices:
-                selected_sel_idx = 0
-            else:
-                selected_sel_idx = max(0, min(selected_sel_idx, len(selectable_indices) - 1))
-
-            curr_item_idx = selectable_indices[selected_sel_idx] if selectable_indices else 0
-            if curr_item_idx < scroll_top:
-                scroll_top = curr_item_idx
-            elif curr_item_idx >= scroll_top + body_h:
-                scroll_top = curr_item_idx - body_h + 1
-
-            # Sub-header for current tier
-            try:
-                subhdr = f" Select models for {td['tier_label']} (Up to {max_slots} slots):"
-                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addstr(1, 1, subhdr[:left_w].ljust(left_w))
-                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-            except Exception:
-                pass
-
-            # Render Left Pane
-            y_offset = 2
-            for row in range(body_h):
-                item_idx = scroll_top + row
-                draw_y = y_offset + row
-
-                if item_idx >= len(display_items):
-                    try:
-                        stdscr.addstr(draw_y, 0, " " * left_w)
-                    except Exception:
-                        pass
-                    continue
-
-                item = display_items[item_idx]
-
-                if item["type"] == "header":
-                    hdr_text = ("  " + item["label"]).ljust(left_w)[:left_w]
-                    try:
-                        stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                        stdscr.addstr(draw_y, 0, hdr_text)
-                        stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                    except Exception:
-                        pass
-                else:
-                    is_active = (item_idx == curr_item_idx)
-                    num_str = f"[{item['num']:>2}]"
-                    d = item["data"]
-
-                    # Checkbox & Slot Number status
-                    is_checked = d in current_selected
-                    if is_checked:
-                        slot_order = current_selected.index(d) + 1
-                        check_str = f"[{slot_order}]"
-                        if slot_order == 1:
-                            slot_badge = "[PRIMARY]"
-                        else:
-                            slot_alias_lbl = slots[slot_order - 1][1] if slot_order <= len(slots) else f"Slot {slot_order}"
-                            slot_badge = f"[SLOT {slot_order}: {slot_alias_lbl}]"
-                    else:
-                        check_str = "[ ]"
-                        slot_badge = ""
-
-                    if item["type"] in ("custom_openrouter", "custom_local"):
-                        name_str = item["label"]
-                        price_str = ""
-                        ctx_short = ""
-                    else:
-                        name_str = d["name"]
-                        price_str = d.get("price_str", "")
-                        raw_ctx = d.get("ctx_str", "").replace(" Context", "").strip()
-                        ctx_short = f"[{raw_ctx}]" if raw_ctx else ""
-
-                    badges = []
-                    if item.get("is_recommended"):
-                        badges.append("(Recommended)")
-                    if "$0.00" in price_str or ":free" in d.get("id", ""):
-                        badges.append("[FREE]")
-                    if slot_badge:
-                        badges.append(slot_badge)
-                    badge_str = " ".join(badges)
-
-                    # Fixed column widths for crisp alignment
-                    col_name_w = 26
-                    if left_w < 84:
-                        col_name_w = max(14, left_w - 9 - 13 - 8 - len(badge_str) - 2)
-
-                    short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
-                    price_part = f"{price_str:<13}" if price_str else (" " * 13)
-                    ctx_part = f"{ctx_short:<8}" if ctx_short else (" " * 8)
-
-                    cursor_char = "▶" if is_active else " "
-                    row_content = f" {cursor_char} {check_str} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
-                    padded_row = row_content.ljust(left_w)[:left_w]
-
-                    try:
-                        if is_active:
-                            stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
-                            stdscr.addstr(draw_y, 0, padded_row)
-                            stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
-                        elif is_checked:
-                            stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
-                            stdscr.addstr(draw_y, 0, padded_row)
-                            stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
-                        else:
-                            stdscr.addstr(draw_y, 0, padded_row)
-                    except Exception:
-                        pass
-
-            # Center Vertical Divider & Right Pane
-            if show_preview and divider_x and right_x and right_w > 0:
-                for y in range(1, max_y - 1):
-                    try:
-                        stdscr.attron(curses.color_pair(6))
-                        stdscr.addstr(y, divider_x, "│")
-                        stdscr.attroff(curses.color_pair(6))
-                    except Exception:
-                        pass
-
-                cur_selected_item = display_items[curr_item_idx]
-                detail_lines = []
-                d = cur_selected_item["data"]
-
-                def add_field(label, val, attr=0):
-                    if not val: return
-                    max_w = max(6, right_w - len(label))
-                    if len(val) <= max_w: detail_lines.append((label, val, attr))
-                    else:
-                        wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
-                        detail_lines.append((label, "", curses.A_BOLD))
-                        for w_part in wrapped: detail_lines.append(("", "  " + w_part, attr))
-
-                add_field("Display Name: ", d["name"], curses.A_BOLD)
-                add_field("Model ID:     ", d["id"], curses.color_pair(1))
-
-                if d.get("provider") == "openrouter" and not d["id"].startswith("custom/"):
-                    add_field("OpenRouter:   ", f"https://openrouter.ai/{d['id']}", curses.color_pair(1))
-                elif d.get("provider") == "ollama":
-                    add_field("Ollama URL:   ", "http://localhost:11434", curses.color_pair(1))
-
-                prov_name = "OpenRouter Cloud" if d.get("provider") == "openrouter" else ("Ollama (Local)" if d.get("provider") == "ollama" else "Custom Gateway")
-                add_field("Provider:     ", prov_name, 0)
-                add_field("Pricing:      ", d.get("price_str", "N/A"), curses.color_pair(5) | curses.A_BOLD)
-                add_field("Context:      ", d.get("ctx_str", "N/A"), curses.color_pair(5))
-
-                s1m_str = "[1M Context Enabled]" if d.get("supports1m") else "[Standard Context Window]"
-                s1m_color = (curses.color_pair(3) | curses.A_BOLD) if d.get("supports1m") else 0
-                add_field("1M Support:   ", s1m_str, s1m_color)
-
-                # Slot Assignment Info
-                if d in current_selected:
-                    slot_order = current_selected.index(d) + 1
-                    canon, s_lbl, _ = slots[slot_order - 1] if slot_order <= len(slots) else ("", "", [])
-                    slot_str = f"[PRIMARY] ➔ {canon} ({s_lbl})" if slot_order == 1 else f"[SLOT {slot_order}] ➔ {canon} ({s_lbl})"
-                    add_field("Slot Status:  ", slot_str, curses.color_pair(3) | curses.A_BOLD)
-                else:
-                    add_field("Slot Status:  ", "Not Checked (Press Space to assign slot)", 0)
-
-                detail_lines.append(("", "", 0))
-                detail_lines.append(("── Selection Order Note ──────────────────────", "", curses.color_pair(4)))
-                order_note = f"1st model checked = [PRIMARY] (Default dropdown in Claude). Subsequent checks fill version variant slots (up to {max_slots} models). Press 'a' to uncheck all and reorder."
-                for wl in textwrap.wrap(order_note, width=right_w):
-                    detail_lines.append(("", wl, curses.color_pair(4)))
-
-                detail_lines.append(("", "", 0))
-                detail_lines.append(("── Description & Highlights ──────────────────", "", curses.color_pair(6)))
-
-                desc_text = d.get("desc") or f"Curated model for {td['tier_name'].upper()} tier tasks."
-                for p in desc_text.split("\n"):
-                    if p.strip():
-                        wrapped = textwrap.wrap(p, width=right_w)
-                        for wl in wrapped:
-                            detail_lines.append(("", wl, 0))
-                    else:
-                        detail_lines.append(("", "", 0))
-
-                card_y = 2
-                card_rows = max_y - 3
-                max_info_scroll = max(0, len(detail_lines) - card_rows)
-                info_scroll_top = min(info_scroll_top, max_info_scroll)
-
-                # Right Pane Section Header
-                try:
-                    scroll_hint = " (d/u to scroll)" if max_info_scroll > 0 else ""
-                    hdr_title = f"── Model Details & Capabilities{scroll_hint} "
-                    dashes = max(0, right_w - len(hdr_title))
-                    full_hdr = (hdr_title + ("─" * dashes))[:right_w]
-                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.addstr(1, right_x, full_hdr)
-                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                except Exception:
-                    pass
-
-                for row_idx in range(card_rows):
-                    line_y = card_y + row_idx
-                    detail_idx = info_scroll_top + row_idx
-                    try:
-                        if detail_idx < len(detail_lines):
-                            label, val, attr = detail_lines[detail_idx]
-                            content = (label + val)[:right_w]
-                            line_text = content.ljust(right_w)
-                        else:
-                            label, val, attr = "", "", 0
-                            line_text = " " * right_w
-
-                        stdscr.addstr(line_y, right_x, line_text[:right_w])
-                        if detail_idx < len(detail_lines):
-                            label, val, attr = detail_lines[detail_idx]
-                            if attr:
-                                stdscr.attron(attr)
-                                stdscr.addstr(line_y, right_x, label[:right_w])
-                                if len(label) < right_w:
-                                    stdscr.addstr(line_y, right_x + len(label), val[:right_w - len(label)])
-                                stdscr.attroff(attr)
-                    except Exception:
-                        pass
-            else:
-                max_info_scroll = 0
-
-            # Footer Navigation
-            next_label = "Review ➔" if active_tier_idx == total_tiers - 1 else "Next Tier ➔"
-            footer_text = f" [Space] Toggle  •  [a] Uncheck All  •  [Enter / n] {next_label}  •  [b / ⬅ Back] Back  •  [Tab/ESC] Info  •  [q] Abort "
-            if input_num_buf:
-                footer_text += f" • Jump: {input_num_buf}_"
-            try:
-                stdscr.attron(curses.color_pair(4) | curses.A_BOLD)
-                stdscr.addstr(max_y - 1, 1, footer_text[:max_x - 2])
-                stdscr.attroff(curses.color_pair(4) | curses.A_BOLD)
-            except Exception:
-                pass
-
-            stdscr.refresh()
-            key = stdscr.getch()
-
-            if key in (curses.KEY_UP, ord('k'), ord('K')):
-                selected_sel_idx = (selected_sel_idx - 1) % len(selectable_indices)
-                info_scroll_top = 0
-            elif key in (curses.KEY_DOWN, ord('j'), ord('J')):
-                selected_sel_idx = (selected_sel_idx + 1) % len(selectable_indices)
-                info_scroll_top = 0
-            elif key in (ord('d'), ord('D'), curses.KEY_NPAGE):
-                info_scroll_top = min(max_info_scroll, info_scroll_top + 4)
-            elif key in (ord('u'), ord('U'), curses.KEY_PPAGE):
-                info_scroll_top = max(0, info_scroll_top - 4)
-            elif key in (ord('\t'), 9, ord('p'), ord('P'), ord('i'), ord('I')):
-                show_preview = not show_preview
-            elif key == 27:  # ESC
-                if input_num_buf:
-                    input_num_buf = ""
-                else:
-                    show_preview = not show_preview
-            elif key in (ord('a'), ord('A')):
-                tier_selections[tname].clear()
-                info_scroll_top = 0
-                input_num_buf = ""
-            elif key == ord(' '):
-                cur_d = display_items[curr_item_idx]["data"]
-                if cur_d in current_selected:
-                    current_selected.remove(cur_d)
-                else:
-                    if len(current_selected) < max_slots:
-                        current_selected.append(cur_d)
-                    else:
-                        current_selected[-1] = cur_d
-                input_num_buf = ""
-            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r'), ord('n'), ord('N'), curses.KEY_RIGHT):
-                if input_num_buf:
-                    try:
-                        target_val = int(input_num_buf)
-                        for item_idx in selectable_indices:
-                            if display_items[item_idx]["num"] == target_val:
-                                tgt_d = display_items[item_idx]["data"]
-                                if tgt_d in current_selected:
-                                    current_selected.remove(tgt_d)
-                                else:
-                                    if len(current_selected) < max_slots:
-                                        current_selected.append(tgt_d)
-                    except ValueError:
-                        pass
-                    input_num_buf = ""
-                else:
-                    if not current_selected and selectable_indices:
-                        current_selected.append(display_items[curr_item_idx]["data"])
-                    active_tier_idx += 1
-                    selected_sel_idx = 0
-                    scroll_top = 0
-                    info_scroll_top = 0
-            elif key in (curses.KEY_LEFT, ord('b'), ord('B'), curses.KEY_BACKSPACE, 127, 8):
-                if input_num_buf:
-                    input_num_buf = input_num_buf[:-1]
-                else:
-                    if active_tier_idx > 0:
-                        active_tier_idx -= 1
-                        selected_sel_idx = 0
-                        scroll_top = 0
-                        info_scroll_top = 0
-            elif key in (ord('q'), ord('Q')):
-                return None
-            elif ord('0') <= key <= ord('9'):
-                input_num_buf += chr(key)
-                try:
-                    target_val = int(input_num_buf)
-                    matched_s_idx = next((s_idx for s_idx, item_idx in enumerate(selectable_indices) if display_items[item_idx]["num"] == target_val), None)
-                    if matched_s_idx is not None:
-                        selected_sel_idx = matched_s_idx
-                        info_scroll_top = 0
-                except ValueError:
-                    input_num_buf = ""
-            elif key == curses.KEY_RESIZE:
+                    active_step -= 1
+                    selected_idx = 0
+                elif ord('1') <= k <= ord('8'):
+                    active_step = (k - ord('1'))
+                    selected_idx = 0
                 continue
 
     try:
@@ -1497,17 +1772,15 @@ def tui_wizard_model_configuration(tiers, current_config, catalog):
         return None
 
 
-def run_model_configuration():
-    setup_env(force=False)
+def run_model_configuration(initial_step=0):
     catalog = fetch_openrouter_catalog()
     current_config = read_current_config()
-    installed = fetch_local_engines()  # dict: {"ollama": set(), "lmstudio": set(), "vllm": set()}
+    installed = fetch_local_engines()
 
     ollama_installed = installed.get("ollama", set())
     if ollama_installed:
         info(f"Ollama: {len(ollama_installed)} model(s) installed")
 
-    # Helper: build an Ollama option entry if the model is installed
     def ollama_opt(model_id, label, ctx_str="Local Context", supports1m=False, is_recommended=False):
         matched = next((n for n in ollama_installed if n == model_id or n.startswith(model_id + ":")), None)
         if not matched:
@@ -1647,14 +1920,15 @@ def run_model_configuration():
         }
     ]
 
-    tier_selections = tui_wizard_model_configuration(tiers, current_config, catalog)
+    wizard_result = tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=initial_step)
 
-    if not tier_selections:
+    if not wizard_result:
         # Fallback CLI Multi-Select Prompt
         print("\n\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
-        print("\033[1;36m  CLAUDE DESKTOP MODEL CONFIGURATION (CLI Multi-Select Fallback)              \033[0m", file=sys.stderr)
+        print("\033[1;36m  CLAUDE DESKTOP SETUP & MODEL CONFIGURATION (CLI Fallback)                   \033[0m", file=sys.stderr)
         print("\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
 
+        existing_key = find_existing_api_key() or ""
         tier_selections = {}
         for t in tiers:
             tname = t["tier_name"]
@@ -1677,12 +1951,29 @@ def run_model_configuration():
                     pass
             tier_selections[tname] = chosen_indices or [all_opts[0]]
 
-    # Generate all slot routes & alias mapping
-    slot_mappings, alias_map, canonical_names = build_all_slot_mappings(tier_selections)
+        wizard_result = {
+            "api_key": existing_key,
+            "tier_selections": tier_selections,
+            "allow_egress": True,
+            "sync_sessions": True,
+        }
 
-    # 1. Write Strict Guardrail & LiteLLM config.yaml
+    # 1. Save Environment & API Key
+    env_path = os.path.join(APP_DIR, ".env")
+    api_key_to_save = wizard_result.get("api_key", "")
     os.makedirs(APP_DIR, exist_ok=True)
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(f"OPENROUTER_API_KEY={api_key_to_save}\nPORT={PORT}\n")
+    os.chmod(env_path, 0o600)
+    if api_key_to_save:
+        success(f"OpenRouter API credentials saved to {env_path}")
+    else:
+        info("Saved proxy configuration without API key (Free & Local models enabled).")
 
+    # 2. Generate all slot routes & alias mapping
+    slot_mappings, alias_map, canonical_names = build_all_slot_mappings(wizard_result["tier_selections"])
+
+    # 3. Write Strict Guardrail & LiteLLM config.yaml
     allowed_models = sorted(set(alias_map.keys()) | canonical_names)
 
     guardrail_py_path = os.path.join(APP_DIR, "guardrail.py")
@@ -1785,9 +2076,22 @@ strict_guardrail = StrictModelGuardrail()
 
     with open(config_yaml_path, "w", encoding="utf-8") as f:
         f.write("\n".join(yaml_lines))
-    success(f"Generated LiteLLM config at: {config_yaml_path} (Strict model blocking: ACTIVE)")
+    success(f"Generated LiteLLM config at: {config_yaml_path} ({len(slot_mappings)} configured slots)")
 
-    # 2. Write Claude 3P configLibrary JSON
+    # 4. Configure Sandbox Egress Allowlist
+    if wizard_result.get("allow_egress"):
+        _set_egress_allowlist(["*"])
+        success("Configured network sandbox egress allowlist (allowedEgressHosts: ['*']).")
+
+    # 5. Synchronize Session Histories
+    if wizard_result.get("sync_sessions"):
+        try:
+            sync_sessions_between_modes(silent=True)
+            success("Synchronized session histories and groupings between 1P and 3P modes.")
+        except Exception:
+            pass
+
+    # 6. Write Claude 3P configLibrary JSON
     os.makedirs(CLAUDE_3P_DIR, exist_ok=True)
     meta_path = os.path.join(CLAUDE_3P_DIR, "_meta.json")
     meta = {"appliedId": None, "entries": []}
@@ -2726,17 +3030,14 @@ def main():
         launch_claude_cli(extra_args=sys.argv[2:])
     elif cmd == "install":
         ensure_dirs()
-        setup_env()
-        run_model_configuration()
+        run_model_configuration(initial_step=0)
         create_runner_script()
         install_service()
-        configure_sandbox_network()
         status_service()
-        sync_sessions()
         post_setup_prompt()
     elif cmd == "models":
         ensure_dirs()
-        run_model_configuration()
+        run_model_configuration(initial_step=1)
         info("Restarting proxy to apply new YAML configuration...")
         install_service()
         success("Proxy restarted with updated configuration.")
