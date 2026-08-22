@@ -1303,47 +1303,24 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                 else:
                     selected_idx = max(0, min(selected_idx, len(selectable_indices) - 1))
 
-                curr_item_idx = selectable_indices[selected_idx] if selectable_indices else 0
-                if curr_item_idx < scroll_top:
-                    scroll_top = curr_item_idx
-                elif curr_item_idx >= scroll_top + body_h:
-                    scroll_top = curr_item_idx - body_h + 1
-
-                try:
-                    subhdr = f" Select models for {td['tier_label']} (Up to {max_slots} slots):"
-                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.addstr(1, 1, subhdr[:left_w].ljust(left_w))
-                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                except Exception:
-                    pass
-
-                # Render Left Pane
-                y_offset = 2
-                for row in range(body_h):
-                    item_idx = scroll_top + row
-                    draw_y = y_offset + row
-
-                    if item_idx >= len(display_items):
-                        try:
-                            stdscr.addstr(draw_y, 0, " " * left_w)
-                        except Exception:
-                            pass
-                        continue
-
-                    item = display_items[item_idx]
-
-                    if item["type"] == "header":
-                        hdr_text = ("  " + item["label"]).ljust(left_w)[:left_w]
-                        try:
-                            stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                            stdscr.addstr(draw_y, 0, hdr_text)
-                            stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                        except Exception:
-                            pass
+                # Build 2-line screen lines for Left Pane
+                screen_lines = []
+                item_to_line_range = {}
+                for it_idx, it in enumerate(display_items):
+                    if it["type"] == "header":
+                        hdr_txt = ("  " + it["label"]).ljust(left_w)[:left_w]
+                        screen_lines.append({
+                            "item_idx": None,
+                            "type": "header",
+                            "text": hdr_txt,
+                            "data": None,
+                            "is_checked": False,
+                            "badges": []
+                        })
                     else:
-                        is_active = (item_idx == curr_item_idx)
-                        num_str = f"[{item['num']:>2}]"
-                        d = item["data"]
+                        is_active = (it_idx == curr_item_idx)
+                        num_str = f"[{it['num']:>2}]"
+                        d = it["data"]
 
                         is_checked = d in current_selected
                         if is_checked:
@@ -1358,8 +1335,8 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                             check_str = "[ ]"
                             slot_badge = ""
 
-                        if item["type"] in ("custom_openrouter", "custom_local"):
-                            name_str = item["label"]
+                        if it["type"] in ("custom_openrouter", "custom_local"):
+                            name_str = it["label"]
                             price_str = ""
                             ctx_short = ""
                         else:
@@ -1369,37 +1346,102 @@ def tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=0):
                             ctx_short = f"[{raw_ctx}]" if raw_ctx else ""
 
                         badges = []
-                        if item.get("is_recommended"):
+                        if it.get("is_recommended"):
                             badges.append("(Recommended)")
                         if "$0.00" in price_str or ":free" in d.get("id", ""):
                             badges.append("[FREE]")
                         if slot_badge:
                             badges.append(slot_badge)
-                        badge_str = " ".join(badges)
 
-                        col_name_w = 26
-                        if left_w < 84:
-                            col_name_w = max(14, left_w - 9 - 13 - 8 - len(badge_str) - 2)
-
-                        short_name = (name_str[:col_name_w - 1] + "…") if len(name_str) > col_name_w else name_str
+                        avail_name_w = max(18, left_w - 12 - 13 - 8)
+                        short_name = (name_str[:avail_name_w - 1] + "…") if len(name_str) > avail_name_w else name_str
                         price_part = f"{price_str:<13}" if price_str else (" " * 13)
                         ctx_part = f"{ctx_short:<8}" if ctx_short else (" " * 8)
-
                         cursor_char = "▶" if is_active else " "
-                        row_content = f" {cursor_char} {check_str} {num_str} {short_name:<{col_name_w}} {price_part} {ctx_part} {badge_str}"
-                        padded_row = row_content.ljust(left_w)[:left_w]
+
+                        line1 = f" {cursor_char} {check_str} {num_str} {short_name:<{avail_name_w}} {price_part} {ctx_part}".ljust(left_w)[:left_w]
+
+                        badge_str = "  ".join(badges) if badges else ""
+                        indent_w = 12
+                        line2 = f"{' ' * indent_w}{badge_str}".ljust(left_w)[:left_w]
+
+                        start_row = len(screen_lines)
+                        screen_lines.append({
+                            "item_idx": it_idx,
+                            "type": "model_top",
+                            "text": line1,
+                            "data": d,
+                            "is_checked": is_checked,
+                            "badges": badges,
+                        })
+                        screen_lines.append({
+                            "item_idx": it_idx,
+                            "type": "model_bottom",
+                            "text": line2,
+                            "data": d,
+                            "is_checked": is_checked,
+                            "badges": badges,
+                        })
+                        item_to_line_range[it_idx] = (start_row, start_row + 1)
+
+                if curr_item_idx in item_to_line_range:
+                    t_start, t_end = item_to_line_range[curr_item_idx]
+                    if t_start < scroll_top:
+                        scroll_top = t_start
+                    elif t_end >= scroll_top + body_h:
+                        scroll_top = t_end - body_h + 1
+
+                try:
+                    subhdr = f" Select models for {td['tier_label']} (Up to {max_slots} slots):"
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(1, 1, subhdr[:left_w].ljust(left_w))
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                except Exception:
+                    pass
+
+                # Render Left Pane
+                y_offset = 2
+                for row in range(body_h):
+                    line_idx = scroll_top + row
+                    draw_y = y_offset + row
+
+                    if line_idx >= len(screen_lines):
+                        try:
+                            stdscr.addstr(draw_y, 0, " " * left_w)
+                        except Exception:
+                            pass
+                        continue
+
+                    s_line = screen_lines[line_idx]
+                    txt = s_line["text"]
+
+                    if s_line["type"] == "header":
+                        try:
+                            stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                            stdscr.addstr(draw_y, 0, txt)
+                            stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                        except Exception:
+                            pass
+                    else:
+                        is_active = (s_line["item_idx"] == curr_item_idx)
+                        is_checked = s_line["is_checked"]
 
                         try:
                             if is_active:
                                 stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
-                                stdscr.addstr(draw_y, 0, padded_row)
+                                stdscr.addstr(draw_y, 0, txt)
                                 stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
                             elif is_checked:
                                 stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
-                                stdscr.addstr(draw_y, 0, padded_row)
+                                stdscr.addstr(draw_y, 0, txt)
                                 stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
                             else:
-                                stdscr.addstr(draw_y, 0, padded_row)
+                                if s_line["type"] == "model_bottom" and s_line["badges"]:
+                                    stdscr.attron(curses.color_pair(4))
+                                    stdscr.addstr(draw_y, 0, txt)
+                                    stdscr.attroff(curses.color_pair(4))
+                                else:
+                                    stdscr.addstr(draw_y, 0, txt)
                         except Exception:
                             pass
 
