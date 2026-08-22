@@ -2131,14 +2131,20 @@ strict_guardrail = StrictModelGuardrail()
             pass
 
     inference_models = []
-    for s in selections:
+    seen_canons = set()
+    for s in slot_mappings:
+        canon = s["canonical"]
+        if canon in seen_canons:
+            continue
+        seen_canons.add(canon)
+        d = s["model_entry"]
         inference_models.append({
-            "name": s["claude_name"],
-            "labelOverride": s["label"],
-            "supports1m": s["supports1m"],
-            "prefer1m": s["supports1m"],
+            "name": canon,
+            "labelOverride": f"{d.get('name', canon)} ({s['label']})",
+            "supports1m": bool(d.get("supports1m")),
+            "prefer1m": bool(d.get("supports1m")),
             "anthropicFamilyTier": s["tier"],
-            "isFamilyDefault": True
+            "isFamilyDefault": (s["slot_index"] == 1)
         })
 
     config_data = {

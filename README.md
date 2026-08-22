@@ -45,10 +45,13 @@ On macOS, 3P runs from `~/Library/Application Support/Claude-3p/`. On Linux, `~/
 Run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-threepio/main/claude-threepio | bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/axiomantic/claude-threepio/main/install.sh)"
 ```
 
 *(Or clone the repository and run `./claude-threepio install`)*
+
+> [!NOTE]
+> **Third-Party Mode Differences**: Because 3P mode routes inference through local proxy endpoints rather than Anthropic's proprietary cloud relay, certain Anthropic cloud-specific features such as `/remote-control` (mobile app session steering via `claude.ai/code`) do not function in 3P mode. Simply switch back to 1P mode (`./claude-threepio switch regular`) whenever you need native remote-control capabilities.
 
 ---
 
