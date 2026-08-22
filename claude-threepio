@@ -666,9 +666,10 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
             except Exception:
                 pass
 
-            left_w = min(48, max(36, int(max_x * 0.36)))
-            right_x = left_w + 2
-            right_w = max(24, max_x - right_x - 2)
+            left_w = min(48, max(36, int(max_x * 0.38)))
+            divider_x = left_w + 1
+            right_x = divider_x + 2
+            right_w = max(24, max_x - right_x - 1)
             body_h = max_y - 3
 
             curr_item_idx = selectable_indices[selected_sel_idx]
@@ -685,7 +686,7 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
 
                 if item_idx >= len(display_items):
                     try:
-                        stdscr.addstr(draw_y, 0, " " * (right_x))
+                        stdscr.addstr(draw_y, 0, " " * left_w)
                     except Exception:
                         pass
                     continue
@@ -698,7 +699,6 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                         stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
                         stdscr.addstr(draw_y, 0, hdr_text)
                         stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                        stdscr.addstr(draw_y, left_w, " " * (right_x - left_w))
                     except Exception:
                         pass
                 else:
@@ -738,35 +738,31 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                             stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
                         else:
                             stdscr.addstr(draw_y, 0, padded_row)
-                        stdscr.addstr(draw_y, left_w, " " * (right_x - left_w))
                     except Exception:
                         pass
 
-            # Render Right Pane (Taking 100% of remaining space safely without line-wrap overflow)
-            cur_selected_item = display_items[curr_item_idx]
-            
-            try:
-                title_part = "┌─ Model Details & Capabilities "
-                dashes = max(0, right_w - len(title_part) - 1)
-                top_border = (title_part + ("─" * dashes))[:right_w - 1] + "┐"
-                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addstr(1, right_x, top_border)
-                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-            except Exception:
-                pass
+            # Center Vertical Divider
+            for y in range(1, max_y - 1):
+                try:
+                    stdscr.attron(curses.color_pair(6))
+                    stdscr.addstr(y, divider_x, "│")
+                    stdscr.attroff(curses.color_pair(6))
+                except Exception:
+                    pass
 
+            # Render Right Pane (Model Details & Capabilities)
+            cur_selected_item = display_items[curr_item_idx]
             detail_lines = []
             d = cur_selected_item["data"]
-            inner_w = max(10, right_w - 4)
 
             def add_field(label, val, attr=0):
                 if not val:
                     return
-                max_w = max(6, inner_w - len(label))
+                max_w = max(6, right_w - len(label))
                 if len(val) <= max_w:
                     detail_lines.append((label, val, attr))
                 else:
-                    wrapped = textwrap.wrap(val, width=max(10, inner_w - 2))
+                    wrapped = textwrap.wrap(val, width=max(10, right_w - 2))
                     detail_lines.append((label, "", curses.A_BOLD))
                     for w_part in wrapped:
                         detail_lines.append(("", "  " + w_part, attr))
@@ -800,18 +796,29 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
             desc_text = d.get("desc") or f"Curated model for {tier['tier_name'].upper()} tier tasks."
             for p in desc_text.split("\n"):
                 if p.strip():
-                    wrapped = textwrap.wrap(p, width=inner_w)
+                    wrapped = textwrap.wrap(p, width=right_w)
                     for wl in wrapped:
                         detail_lines.append(("", wl, 0))
                 else:
                     detail_lines.append(("", "", 0))
 
             card_y = 2
-            card_max_y = max_y - 2
-            card_rows = max(1, card_max_y - card_y)
+            card_rows = max_y - 3
 
             max_info_scroll = max(0, len(detail_lines) - card_rows)
             info_scroll_top = min(info_scroll_top, max_info_scroll)
+
+            # Right Pane Section Header
+            try:
+                scroll_hint = " (d/u to scroll)" if max_info_scroll > 0 else ""
+                hdr_title = f"── Model Details & Capabilities{scroll_hint} "
+                dashes = max(0, right_w - len(hdr_title))
+                full_hdr = (hdr_title + ("─" * dashes))[:right_w]
+                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                stdscr.addstr(1, right_x, full_hdr)
+                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+            except Exception:
+                pass
 
             for row_idx in range(card_rows):
                 line_y = card_y + row_idx
@@ -819,51 +826,32 @@ def tui_select_model(tier, tier_idx, total_tiers, all_options, matched_current_i
                 try:
                     if detail_idx < len(detail_lines):
                         label, val, attr = detail_lines[detail_idx]
-                        content = (label + val)[:inner_w]
-                        line_text = "│ " + content.ljust(inner_w) + " │"
+                        content = (label + val)[:right_w]
+                        line_text = content.ljust(right_w)
                     else:
                         label, val, attr = "", "", 0
-                        line_text = "│ " + (" " * inner_w) + " │"
+                        line_text = " " * right_w
 
-                    # Base framed line
+                    # Draw base line wiping any old characters completely
                     stdscr.addstr(line_y, right_x, line_text[:right_w])
 
                     # Highlight formatted attributes
                     if detail_idx < len(detail_lines):
                         if label and not val and attr:
                             stdscr.attron(attr)
-                            stdscr.addstr(line_y, right_x + 2, label[:inner_w])
+                            stdscr.addstr(line_y, right_x, label[:right_w])
                             stdscr.attroff(attr)
                         else:
                             if label:
                                 stdscr.attron(curses.A_BOLD)
-                                stdscr.addstr(line_y, right_x + 2, label[:inner_w])
+                                stdscr.addstr(line_y, right_x, label[:right_w])
                                 stdscr.attroff(curses.A_BOLD)
                             if val and attr:
                                 stdscr.attron(attr)
-                                stdscr.addstr(line_y, right_x + 2 + len(label), val[:max(0, inner_w - len(label))])
+                                stdscr.addstr(line_y, right_x + len(label), val[:max(0, right_w - len(label))])
                                 stdscr.attroff(attr)
                 except Exception:
                     pass
-
-            # Bottom border with scroll indicator
-            try:
-                scroll_indicator = ""
-                if info_scroll_top > 0 and info_scroll_top + card_rows < len(detail_lines):
-                    scroll_indicator = " ^/v scroll (d/u) "
-                elif info_scroll_top > 0:
-                    scroll_indicator = " ^ top (u) "
-                elif info_scroll_top + card_rows < len(detail_lines):
-                    scroll_indicator = " v more (d) "
-
-                dashes = max(0, right_w - len(scroll_indicator) - 6)
-                bot_border = "└────" + scroll_indicator + ("─" * dashes)
-                bot_border = bot_border[:right_w - 1] + "┘"
-                stdscr.attron(curses.color_pair(1))
-                stdscr.addstr(card_max_y, right_x, bot_border)
-                stdscr.attroff(curses.color_pair(1))
-            except Exception:
-                pass
 
             # Footer navigation bar
             footer_text = " [↑/↓/j/k] Preview  •  [d/u] Scroll info  •  [1-N / Enter] Select  •  [q] Abort "
