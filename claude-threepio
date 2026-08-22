@@ -2068,40 +2068,8 @@ def run_model_configuration(initial_step=0):
     wizard_result = tui_unified_setup_wizard(tiers, current_config, catalog, initial_step=initial_step)
 
     if not wizard_result:
-        # Fallback CLI Multi-Select Prompt
-        print("\n\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
-        print("\033[1;36m  CLAUDE DESKTOP SETUP & MODEL CONFIGURATION (CLI Fallback)                   \033[0m", file=sys.stderr)
-        print("\033[1;36m═══════════════════════════════════════════════════════════════════════════════\033[0m", file=sys.stderr)
-
-        existing_key = find_existing_api_key() or ""
-        tier_selections = {}
-        for t in tiers:
-            tname = t["tier_name"]
-            all_opts = t["options"] + t.get("ollama_options", [])
-            print(f"\n\033[1;36m--- {t['tier_label']} ---\033[0m", file=sys.stderr)
-            for idx, opt in enumerate(all_opts, 1):
-                p_str = opt.get("price_str", "")
-                c_str = f"[{opt.get('ctx_str', '')}]"
-                rec_str = " \033[1;32m(Recommended)\033[0m" if opt.get("is_recommended") else ""
-                print(f"  {idx}) {opt['name']:<28} {p_str:<12} {c_str:<16}{rec_str}", file=sys.stderr)
-
-            user_choice = safe_input(f"Enter model number(s) comma-separated e.g. 1,2 (default=1): ", "1")
-            chosen_indices = []
-            for part in user_choice.split(","):
-                try:
-                    c_val = int(part.strip())
-                    if 1 <= c_val <= len(all_opts):
-                        chosen_indices.append(all_opts[c_val - 1])
-                except ValueError:
-                    pass
-            tier_selections[tname] = chosen_indices or [all_opts[0]]
-
-        wizard_result = {
-            "api_key": existing_key,
-            "tier_selections": tier_selections,
-            "allow_egress": True,
-            "sync_sessions": True,
-        }
+        print("\n\033[1;33m[CANCELLED]\033[0m Wizard cancelled. No changes were made.", file=sys.stderr)
+        sys.exit(0)
 
     # 1. Save Environment & API Key
     env_path = os.path.join(APP_DIR, ".env")
